@@ -45,12 +45,11 @@ Validation failures set `ok:false` and include a human-readable `message`. Clien
 | `config_import` | versioned JSON configuration | pilot |
 | `emergency_surface` | — | pilot |
 
-The browser sends heartbeat every 250 ms. Firmware defaults to a 1000 ms deadline. Failsafe releases the pilot lock, disarms and neutralizes propulsion, and moves calibrated ballast outputs to surface/empty.
+The app sends a heartbeat every 250 ms. The ESP code defaults to a 1000 ms deadline. Failsafe releases the pilot lock, disarms and neutralizes propulsion, and moves calibrated ballast outputs to surface/empty.
 
 ## Telemetry meaning
 
 - `rssi` is the ESP32’s measured Wi-Fi station signal where supported; `null` means unavailable.
-- `uptimeMs`, `clients`, calibration, arm, pilot, failsafe, ballast, light, and camera state come from firmware.
+- `uptimeMs`, `clients`, calibration, arm, pilot, failsafe, ballast, light, and camera state come from the ESP code.
 - Latency and acknowledgement loss are computed on the client.
 - Physical sonar, depth, heading, temperature, leak, battery-current, and similar values do not exist without added sensors.
-

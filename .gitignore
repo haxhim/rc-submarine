@@ -1,11 +1,10 @@
 node_modules/
 web/dist/
-firmware/data/
-firmware/.pio/
+esp-materials/data/
+esp-materials/.pio/
 android/.gradle/
 android/local.properties
 android/app/build/
 releases/*.apk
-releases/firmware/*.bin
+releases/esp-materials/*.bin
 *.log
-

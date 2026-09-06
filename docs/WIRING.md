@@ -10,7 +10,7 @@
 | Right bidirectional ESC signal | 15 | Boot strap pin; fit the recommended pulldown |
 | Onboard flash LED | 4 | PWM brightness; microSD cannot be used |
 
-The OV2640 uses GPIO0, 5, 18, 19, 21–23, 25–27, 32, 34–36, and 39 exactly as defined in `firmware/include/pins.h`. GPIO16 and GPIO17 are tied to ESP32-CAM PSRAM and must remain unavailable.
+The OV2640 uses GPIO0, 5, 18, 19, 21–23, 25–27, 32, 34–36, and 39 exactly as defined in `esp-materials/include/pins.h`. GPIO16 and GPIO17 are tied to ESP32-CAM PSRAM and must remain unavailable.
 
 ## Power architecture
 
@@ -60,4 +60,3 @@ GPIO0 is also a boot strap and camera clock. Use it only for the documented flas
 ## Version 1 unused/optional BOM parts
 
 The N20 geared motors, potentiometers, linear potentiometer, reed switches, IRF4905 MOSFETs, 2N3904 transistors, perfboard light circuit, and related resistors/LEDs are not required by version 1. Ballast uses the two servos and syringes; illumination uses the ESP32-CAM onboard flash LED. Keep unused pins and wires insulated.
-

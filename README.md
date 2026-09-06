@@ -4,11 +4,11 @@ Submarine RC is a local-only controller for an AI-Thinker ESP32-CAM submarine. T
 
 ## What is included
 
-- `firmware/` — ESP32-CAM firmware, camera streaming, WebSocket controls, NVS calibration, failsafe, and LittleFS UI
+- `esp-materials/` — ESP32-CAM code, pin definitions, PlatformIO project, and complete flashing guide
 - `web/` — responsive Pilot, Camera, Sonar, Logs, and Settings interface
 - `simulator/` — hardware-free local server at `http://localhost:3000`
 - `android/` — native Java WebView wrapper (`my.finalyearproject.submarinerc`)
-- `releases/` — compiled flash binaries and sideload APK after a release build
+- `releases/` — compiled ESP images and sideload APK after a release build
 - `docs/` — wiring, calibration, protocol, troubleshooting, and bench-test instructions
 
 ## Important safety limitations
@@ -37,10 +37,10 @@ npm test
 ## Hardware start
 
 1. Read [WIRING.md](docs/WIRING.md) completely and wire the power system with the battery disconnected.
-2. Build or use the binaries described in [firmware/README.md](firmware/README.md).
+2. Open the step-by-step [ESP Materials flashing guide](esp-materials/README.md).
 3. Flash the ESP32-CAM with GPIO0 connected to GND, then remove GPIO0 from GND and reset.
 4. Join `SUB-RC-<device-id>` using the default password `NautilusRC!`.
-5. Open `http://192.168.4.1` or install the APK from `releases/SubmarineRC-v1.0.0.apk`.
+5. Install the Android app from `releases/SubmarineRC-v1.0.0.apk`; it connects directly to the ESP at `192.168.4.1`.
 6. With propellers removed, claim control and complete [CALIBRATION.md](docs/CALIBRATION.md).
 
 Change the default Wi-Fi password before field use. The controller is intentionally limited to two simultaneous Wi-Fi clients and one active pilot.
@@ -49,7 +49,7 @@ Change the default Wi-Fi password before field use. The controller is intentiona
 
 ```bash
 npm run build:web
-./scripts/build-firmware.sh
+./scripts/build-esp-materials.sh
 npm run build:android
 npm run package:apk
 ```
@@ -58,16 +58,15 @@ For Android Studio instructions and signing notes, see [android/README.md](andro
 
 ## Release contents
 
-The merged firmware is written as one image at address `0x0`. Individual images are also supplied for recovery and inspection:
+The ready-to-flash ESP image is written as one file at address `0x0`. Individual ESP materials are also supplied for recovery and inspection:
 
 | File | Flash address |
 | --- | ---: |
+| `SubmarineRC-ESP-v1.0.0.bin` | `0x0` |
 | `bootloader.bin` | `0x1000` |
 | `partitions.bin` | `0x8000` |
 | `boot_app0.bin` | `0xE000` |
-| `firmware.bin` | `0x10000` |
-| `littlefs.bin` | `0x210000` |
+| `esp-code.bin` | `0x10000` |
+| `littlefs-ui.bin` | `0x210000` |
 
 See [BENCH_TEST.md](docs/BENCH_TEST.md) before installing propellers or placing the electronics in the hull.
-
-# rc-submarine
