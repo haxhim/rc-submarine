@@ -1,0 +1,11 @@
+node_modules/
+web/dist/
+firmware/data/
+firmware/.pio/
+android/.gradle/
+android/local.properties
+android/app/build/
+releases/*.apk
+releases/firmware/*.bin
+*.log
+

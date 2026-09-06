@@ -1,0 +1,278 @@
+/* Cockpit layout for phones and small tablets used sideways. */
+@media (orientation: landscape) and (min-width: 761px) {
+  html,
+  body { height: 100%; overflow: hidden; }
+  .app-shell,
+  .workspace { height: 100vh; }
+  .workspace { display: flex; flex-direction: column; overflow: hidden; }
+  .topbar { min-height: 62px; flex: 0 0 62px; padding-top: 8px; padding-bottom: 8px; }
+  .state-banner { min-height: 36px; flex: 0 0 36px; padding-top: 6px; padding-bottom: 6px; }
+  .content { flex: 1; min-height: 0; max-width: none; overflow: auto; padding: 10px 16px 12px; }
+
+  #pilotView.active { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+  #pilotView .view-heading { flex: 0 0 55px; min-height: 0; margin: 0; align-items: center; }
+  #pilotView .view-heading p { display: none; }
+  #pilotView .view-heading h2 { margin-bottom: 0; font-size: clamp(19px, 1.45vw, 25px); }
+  #pilotView .heading-actions .button { min-height: 38px; padding: 8px 14px; }
+  #pilotView .pilot-grid {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(230px, .92fr) minmax(340px, 1.38fr) minmax(235px, .92fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px;
+    align-items: stretch;
+  }
+  #pilotView .panel { min-height: 0; padding: 13px; }
+  #pilotView .panel-title { margin-bottom: 8px; }
+  #pilotView .panel-title h3 { font-size: clamp(14px, 1.15vw, 18px); }
+  #pilotView .joystick-panel {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #pilotView .joystick { width: min(29vh, 220px); height: min(29vh, 220px); margin: 4px auto 10px; flex: 0 1 auto; }
+  #pilotView .range-field { margin-top: auto; }
+  #pilotView .motor-output { margin-top: 9px; }
+  #pilotView .camera-card {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #pilotView .camera-card .feed-wrap { flex: 1; min-height: 0; aspect-ratio: auto; }
+  #pilotView .camera-card .feed-wrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  #pilotView .camera-shortcuts { flex: 0 0 auto; margin-top: 8px; }
+  #pilotView .ballast-panel { grid-column: 3; grid-row: 1; overflow: hidden; }
+  #pilotView .status-panel { grid-column: 3; grid-row: 2; overflow: hidden; }
+  #pilotView .ballast-panel .range-field { margin-top: 7px; }
+  #pilotView .ballast-panel .two-actions { margin: 7px 0; gap: 6px; }
+  #pilotView .ballast-panel .button { min-height: 36px; padding-top: 6px; padding-bottom: 6px; }
+  #pilotView .status-panel .metric-list { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; }
+  #pilotView .status-panel .metric-list div { min-width: 0; padding: 6px 0; }
+  #pilotView .status-panel .metric-list dt,
+  #pilotView .status-panel .metric-list dd { font-size: clamp(9px, .78vw, 12px); }
+
+  #cameraView.active,
+  #sonarView.active,
+  #logsView.active,
+  #settingsView.active { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+  #cameraView > .view-heading,
+  #sonarView > .view-heading,
+  #logsView > .view-heading,
+  #settingsView > .view-heading { flex: 0 0 55px; min-height: 0; margin: 0; align-items: center; }
+  #cameraView > .view-heading p,
+  #sonarView > .view-heading p,
+  #logsView > .view-heading p,
+  #settingsView > .view-heading p { display: none; }
+
+  #cameraView .camera-grid,
+  #sonarView .signal-grid,
+  #settingsView .settings-grid { flex: 1; min-height: 0; gap: 10px; align-items: stretch; }
+  #cameraView .camera-grid { grid-template-columns: minmax(0, 1.7fr) minmax(230px, .55fr); }
+  #cameraView .camera-main { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #cameraView .feed-wrap.large { flex: 1; min-height: 0; aspect-ratio: auto; }
+  #cameraView .feed-wrap.large img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  #cameraView .camera-controls { flex: 0 0 auto; padding-top: 8px; }
+  #cameraView .side-stack { min-height: 0; display: grid; grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; gap: 10px; }
+  #cameraView .side-stack .panel { min-height: 0; overflow: hidden; }
+
+  #sonarView .signal-grid { grid-template-columns: .75fr 1.35fr .9fr; grid-template-rows: minmax(0, 1fr); }
+  #sonarView .signal-grid > .panel { min-height: 0; height: 100%; overflow: hidden; }
+  #sonarView .history-card { grid-column: 3; }
+  #sonarView .signal-card { display: flex; flex-direction: column; }
+  #sonarView #signalChart { flex: 1; min-height: 80px; }
+
+  #logsView .logs-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #logsView .log-toolbar { flex: 0 0 auto; }
+  #logsView .table-wrap { flex: 1; min-height: 0; overflow: auto; }
+
+  #settingsView .settings-grid { grid-template-columns: 1.45fr .72fr; grid-template-rows: minmax(0, 1fr); }
+  #settingsView .calibration-panel { min-height: 0; height: 100%; overflow: hidden; }
+  #settingsView .side-stack { min-height: 0; display: grid; grid-template-columns: 1fr; grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  #settingsView .side-stack .panel { min-height: 0; overflow: hidden; }
+  footer { display: none; }
+}
+
+@media (orientation: landscape) and (max-height: 600px) {
+  .sidebar {
+    inset: 0 auto 0 0;
+    width: 64px;
+    height: 100vh;
+    padding: 9px 5px;
+    border-right: 1px solid var(--line);
+    border-top: 0;
+    flex-direction: column;
+  }
+
+  .brand { display: grid; width: 38px; height: 38px; margin: 0 0 9px; }
+  .sidebar nav { display: grid; width: 100%; gap: 3px; }
+  .nav-item,
+  .settings-nav { width: 52px; min-height: 43px; margin: 0; font-size: 8px; }
+  .settings-nav { margin-top: auto; }
+  .nav-item.active::before { inset: 20% auto 20% -5px; width: 2px; height: auto; }
+
+  .workspace { margin-left: 64px; padding-bottom: 0; }
+  .topbar { min-height: 48px; flex: 0 0 48px; padding: 6px 12px; }
+  .topbar h1 { font-size: 13px; }
+  .topbar small { display: none; }
+  .header-actions { gap: 6px; }
+  .header-actions .ghost { min-height: 32px; padding: 5px 9px; }
+  .role-badge { padding: 4px 7px; }
+
+  .state-banner { min-height: 34px; flex: 0 0 34px; padding: 5px 12px; gap: 9px; flex-direction: row; align-items: center; }
+  .state-banner strong { font-size: 10px; white-space: nowrap; }
+  .state-banner span { font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .content { max-width: none; padding: 8px 10px 14px; }
+  .view-heading { margin-bottom: 8px; align-items: center; flex-direction: row; }
+  .view-heading small { font-size: 8px; }
+  .view-heading h2 { margin: 2px 0 0; font-size: 18px; }
+  .view-heading p { display: none; }
+  .heading-actions { display: flex; }
+  .button { min-height: 34px; padding: 6px 10px; font-size: 9px; }
+  .panel { padding: 10px; border-radius: 11px; }
+  .panel-title { margin-bottom: 7px; }
+  .panel-title h3 { font-size: 12px; }
+  .panel-title small { font-size: 7px; }
+
+  .pilot-grid {
+    display: grid;
+    grid-template-columns: .85fr 1.3fr .85fr;
+    gap: 8px;
+    align-items: start;
+  }
+  #pilotView .view-heading { flex: 0 0 55px; }
+  #pilotView .pilot-grid {
+    grid-template-columns: .85fr 1.3fr .85fr;
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+  }
+  #pilotView .joystick-panel { grid-column: 1; grid-row: 1; }
+  #pilotView .camera-card { grid-column: 2; grid-row: 1; }
+  #pilotView .ballast-panel { grid-column: 3; grid-row: 1; }
+  #pilotView .status-panel { display: none; }
+  #pilotView .panel { padding: 9px; }
+  #pilotView .panel-title { margin-bottom: 5px; }
+  #pilotView .joystick { width: min(23vh, 105px); height: min(23vh, 105px); margin: 0 auto 5px; }
+  #pilotView .range-field { margin-top: auto; }
+  #pilotView .motor-output { margin-top: 5px; }
+  #pilotView .camera-shortcuts { margin-top: 5px; }
+  #pilotView .ballast-panel .range-field { margin-top: 4px; }
+  #pilotView .ballast-panel .two-actions { margin: 5px 0; }
+  #pilotView .ballast-panel .button { min-height: 30px; }
+  .joystick-panel { grid-column: 1; grid-row: 1 / span 2; }
+  .camera-card { grid-column: 2; grid-row: 1 / span 2; order: initial; }
+  .ballast-panel { grid-column: 3; grid-row: 1; }
+  .status-panel { grid-column: 3; grid-row: 2; }
+  .joystick { width: min(26vh, 155px); height: min(26vh, 155px); margin: 4px auto 8px; }
+  .range-field { margin-top: 7px; }
+  .motor-output { margin-top: 8px; }
+  .feed-wrap { aspect-ratio: 4 / 3; min-height: 0; }
+  .camera-shortcuts { margin-top: 7px; gap: 7px; }
+  .inline-range { min-width: 130px; }
+  .metric-list div { padding: 4px 0; }
+  .metric-list dt, .metric-list dd { font-size: 9px; }
+  .two-actions { gap: 5px; margin: 8px 0 5px; }
+  footer { display: none; }
+  .toast { left: auto; right: 10px; top: 52px; bottom: auto; width: min(300px, calc(100vw - 84px)); }
+
+  .camera-grid { grid-template-columns: minmax(0, 1.7fr) minmax(190px, .65fr); gap: 8px; }
+  .camera-grid .side-stack { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .camera-main .feed-wrap.large { aspect-ratio: 16 / 7; min-height: 185px; }
+  .camera-controls { grid-template-columns: repeat(3, 1fr); gap: 7px; padding-top: 7px; }
+
+  .signal-grid { grid-template-columns: .72fr 1.3fr .85fr; gap: 8px; }
+  .sonar-graphic { width: 105px; height: 105px; }
+  .event-list { grid-template-columns: 1fr 1fr; }
+  .settings-grid { grid-template-columns: 1.45fr .8fr; gap: 8px; }
+  .form-grid { gap: 6px; }
+
+  #cameraView > .view-heading,
+  #sonarView > .view-heading,
+  #logsView > .view-heading,
+  #settingsView > .view-heading { flex: 0 0 55px; }
+  #cameraView .camera-main,
+  #cameraView .camera-grid,
+  #sonarView .signal-grid,
+  #logsView .logs-panel,
+  #settingsView .settings-grid { min-height: 0; }
+  #cameraView .feed-wrap.large { min-height: 0; aspect-ratio: auto; }
+  #cameraView .camera-controls { padding-top: 5px; gap: 5px; }
+  #cameraView .side-stack { gap: 6px; }
+  #cameraView .side-stack .panel { padding: 8px; }
+  #cameraView .side-stack .muted { display: none; }
+
+  #sonarView .signal-grid { grid-template-columns: .72fr 1.3fr .85fr; grid-template-rows: minmax(0, 1fr); }
+  #sonarView .history-card { grid-column: 3; }
+  #sonarView .signal-grid > .panel { padding: 8px; }
+  #sonarView .unavailable-card { display: flex; flex-direction: column; align-items: center; }
+  #sonarView .unavailable-card p { font-size: 8px; line-height: 1.35; margin: 4px 0; }
+  #sonarView .unavailable-card h3 { margin: 3px 0; font-size: 12px; }
+  #sonarView .unavailable-card .subtle-badge { margin-top: auto; }
+  #sonarView .sonar-graphic { width: 82px; height: 82px; }
+  #sonarView .metric-cards { grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  #sonarView .event-list { display: block; }
+  #sonarView .event-list li { padding: 4px 0; }
+  #sonarView .event-list li:nth-child(n+4) { display: none; }
+
+  #logsView .logs-panel { padding: 8px; }
+  #logsView .log-toolbar { min-height: 34px; margin-bottom: 5px; flex-direction: row; }
+  #logsView .log-toolbar input,
+  #logsView .log-toolbar select { min-height: 30px; max-width: 260px; }
+  #logsView table { font-size: 9px; }
+  #logsView th,
+  #logsView td { padding: 5px 7px; }
+
+  #settingsView .settings-grid { grid-template-columns: 1.6fr .9fr; grid-template-rows: minmax(0, 1fr); }
+  #settingsView .calibration-panel { padding: 8px; display: flex; flex-direction: column; }
+  #settingsView .calibration-panel .panel-title { margin-bottom: 4px; }
+  #settingsView .calibration-panel .panel-title small { display: none; }
+  #settingsView .safety-check { min-height: 29px; margin-bottom: 5px; padding: 4px 7px; }
+  #settingsView .safety-check small { display: none; }
+  #settingsView .form-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin: 0; }
+  #settingsView .form-grid label,
+  #settingsView .side-stack label { gap: 2px; font-size: 8px; }
+  #settingsView .form-grid input,
+  #settingsView .side-stack input,
+  #settingsView .side-stack select { min-height: 26px; padding: 3px 6px; font-size: 9px; }
+  #settingsView .checkbox-row { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; margin: 2px 0; }
+  #settingsView .checkbox-row label { font-size: 8px; }
+  #settingsView #saveCalibration { min-height: 28px; margin-top: auto; }
+  #settingsView .side-stack { gap: 5px; }
+  #settingsView .side-stack .panel { padding: 6px 8px; }
+  #settingsView .side-stack .panel > small { display: none; }
+  #settingsView .side-stack h3 { margin: 0 0 3px; font-size: 11px; }
+  #settingsView .side-stack p { display: none; }
+  #settingsView .side-stack .button { min-height: 26px; margin-top: 3px; padding: 3px 7px; }
+  #settingsView .side-stack .metric-list { display: grid; grid-template-columns: 1fr 1fr; column-gap: 6px; }
+  #settingsView .side-stack .metric-list div { padding: 2px 0; }
+  #settingsView .side-stack .panel:nth-child(1),
+  #settingsView .side-stack .panel:nth-child(2) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    column-gap: 5px;
+    align-items: end;
+  }
+  #settingsView .side-stack .panel:nth-child(1) h3,
+  #settingsView .side-stack .panel:nth-child(2) h3 { grid-column: 1 / -1; align-self: start; }
+  #settingsView .side-stack .panel:nth-child(1) label,
+  #settingsView .side-stack .panel:nth-child(2) label { min-width: 0; }
+  #settingsView .side-stack .panel:nth-child(1) .button,
+  #settingsView .side-stack .panel:nth-child(2) .button { width: auto; min-width: 76px; margin: 0; white-space: nowrap; }
+}
+
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 760px) {
+  .pilot-grid { grid-template-columns: .85fr 1.15fr; }
+  .joystick-panel { grid-column: 1; grid-row: 1; }
+  .camera-card { grid-column: 2; grid-row: 1; }
+  .ballast-panel { grid-column: 1; grid-row: 2; }
+  .status-panel { grid-column: 2; grid-row: 2; }
+  .camera-shortcuts { align-items: stretch; flex-direction: column; }
+  .metric-cards { grid-template-columns: repeat(4, 1fr); }
+  .signal-grid { grid-template-columns: 1fr 1.4fr; }
+  .history-card { grid-column: 1 / -1; }
+}

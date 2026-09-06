@@ -1,0 +1,18 @@
+{
+  "name": "submarine-rc",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:web": "tsc -p web/tsconfig.json && node scripts/copy-web.mjs",
+    "dev": "npm run build:web && node simulator/server.mjs",
+    "test": "npm run build:web && node --test tests/*.test.mjs",
+    "test:integration": "node --test tests/*.integration.mjs",
+    "build:android": "cd android && ./gradlew assembleDebug",
+    "package:apk": "node scripts/package-apk.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "ws": "^8.18.3"
+  }
+}

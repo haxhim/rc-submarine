@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#07131d" />
+    <title>Nautilus RC · Submarine Controller</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23081018'/%3E%3Cpath d='M10 35c0-10 8-18 19-18h13c6 0 11 4 12 10l7 4v8l-7 4c-1 6-6 10-12 10H29c-11 0-19-8-19-18Z' fill='%2317c4c8'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/styles.css?v=1007" />
+    <link rel="stylesheet" href="/visibility.css?v=1007" />
+    <link rel="stylesheet" href="/landscape.css?v=1007" />
+  </head>
+  <body>
+    <div id="boot" class="boot-screen"><div class="boot-mark">N</div><strong>Connecting to RC-01</strong><span>Opening the local control link…</span></div>
+    <div id="app" class="app-shell" hidden>
+      <aside class="sidebar" aria-label="Main navigation">
+        <button class="brand" data-view-target="pilot" aria-label="Open Pilot">N</button>
+        <nav>
+          <button class="nav-item active" data-view-target="pilot" aria-current="page"><span>⌁</span>Pilot</button>
+          <button class="nav-item" data-view-target="camera"><span>◉</span>Camera</button>
+          <button class="nav-item" data-view-target="sonar"><span>◌</span>Sonar</button>
+          <button class="nav-item" data-view-target="logs"><span>≡</span>Logs</button>
+        </nav>
+        <button class="nav-item settings-nav" data-view-target="settings"><span>⚙</span>Settings</button>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <div><small>NAUTILUS OPERATIONS</small><h1 id="pageTitle">RC-01 · Pilot console</h1></div>
+          <div class="header-actions">
+            <span id="linkBadge" class="status-badge offline"><i></i><span>Offline</span></span>
+            <span id="roleBadge" class="role-badge">Monitor</span>
+            <button id="reconnectButton" class="button ghost">Reconnect</button>
+          </div>
+        </header>
+        <div id="stateBanner" class="state-banner warning"><strong>Controller unavailable</strong><span>Connect to the submarine Wi-Fi network and retry.</span></div>
+
+        <main class="content">
+          <section id="pilotView" class="view active" data-view="pilot">
+            <div class="view-heading">
+              <div><small>MANUAL CONTROL</small><h2>Pilot console</h2><p>Drive, trim ballast and control the onboard light.</p></div>
+              <div class="heading-actions"><button id="claimButton" class="button secondary">Claim control</button><button id="armButton" class="button primary" disabled>Arm propulsion</button></div>
+            </div>
+            <div class="pilot-grid">
+              <article class="panel joystick-panel">
+                <div class="panel-title"><div><small>THRUSTER VECTOR</small><h3>Differential drive</h3></div><output id="vectorOutput">X 0.00 · Y 0.00</output></div>
+                <div id="joystick" class="joystick disabled" role="slider" aria-label="Two-axis drive joystick" tabindex="0">
+                  <i class="axis horizontal"></i><i class="axis vertical"></i><i class="joy-ring one"></i><i class="joy-ring two"></i><span id="joystickKnob" class="joystick-knob">+</span>
+                </div>
+                <label class="range-field"><span>Throttle limit <output id="throttleOutput">60%</output></span><input id="throttleLimit" type="range" min="10" max="100" value="60" /></label>
+                <div class="motor-output"><div><span>LEFT ESC</span><strong id="leftMotor">Neutral</strong></div><div><span>RIGHT ESC</span><strong id="rightMotor">Neutral</strong></div></div>
+              </article>
+
+              <article class="panel camera-card">
+                <div class="panel-title"><div><small>CAM 01</small><h3>Forward camera</h3></div><span class="live-pill"><i></i>LIVE</span></div>
+                <div class="feed-wrap"><img id="pilotFeed" alt="Live forward submarine camera stream" /><div class="reticle"><i></i><i></i><i></i><i></i><span>+</span></div><div class="feed-label top">OV2640 · <span id="feedResolution">VGA</span></div><div class="feed-label bottom"><span id="feedFps">— FPS</span> · <span id="feedRssi">— dBm</span></div></div>
+                <div class="camera-shortcuts"><button class="button secondary" data-view-target="camera">Open camera</button><label class="inline-range">Light <input id="pilotLight" type="range" min="0" max="100" value="0" /><output id="pilotLightOutput">0%</output></label></div>
+              </article>
+
+              <article class="panel ballast-panel">
+                <div class="panel-title"><div><small>BUOYANCY</small><h3>Ballast syringes</h3></div><span id="ballastState" class="subtle-badge">Hold</span></div>
+                <label class="range-field"><span>Front ballast <output id="frontBallastOutput">0%</output></span><input id="frontBallast" type="range" min="0" max="100" value="0" disabled /></label>
+                <label class="range-field"><span>Rear ballast <output id="rearBallastOutput">0%</output></span><input id="rearBallast" type="range" min="0" max="100" value="0" disabled /></label>
+                <div class="two-actions"><button id="surfaceButton" class="button secondary" disabled>Empty / surface</button><button id="diveButton" class="button secondary" disabled>Fill / dive</button></div>
+                <button id="emergencyButton" class="button danger wide" disabled>Emergency surface</button>
+              </article>
+
+              <article class="panel status-panel">
+                <div class="panel-title"><div><small>REAL TELEMETRY</small><h3>Vehicle state</h3></div><button id="refreshStatus" class="icon-button" aria-label="Refresh status">↻</button></div>
+                <dl class="metric-list"><div><dt>Control state</dt><dd id="controlState">Disconnected</dd></div><div><dt>Wi-Fi RSSI</dt><dd id="rssiMetric">Unavailable</dd></div><div><dt>Round-trip latency</dt><dd id="latencyMetric">—</dd></div><div><dt>Acknowledgement loss</dt><dd id="lossMetric">0%</dd></div><div><dt>Uptime</dt><dd id="uptimeMetric">—</dd></div><div><dt>Failsafe</dt><dd id="failsafeMetric">Ready</dd></div></dl>
+              </article>
+            </div>
+          </section>
+
+          <section id="cameraView" class="view" data-view="camera">
+            <div class="view-heading"><div><small>VISUAL SYSTEMS</small><h2>Camera control</h2><p>Inspect, capture and record the real OV2640 feed.</p></div><div class="heading-actions"><button id="captureButton" class="button secondary">Capture JPEG</button><button id="recordButton" class="button primary">Start recording</button></div></div>
+            <div class="camera-grid">
+              <article class="panel camera-main"><div class="feed-wrap large"><img id="cameraFeed" alt="Live OV2640 stream" crossorigin="anonymous" /><canvas id="recordCanvas" hidden></canvas><div id="cameraOverlay" class="camera-overlay"><div class="reticle"><i></i><i></i><i></i><i></i><span>+</span></div><span class="overlay-heading">327° · CAMERA ORIENTATION NOT SENSED</span><span class="feed-label bottom">LIVE · <span id="cameraFps">— FPS</span></span></div></div><div class="camera-controls"><label>Resolution<select id="frameSize"><option value="QVGA">QVGA · 320×240</option><option value="VGA" selected>VGA · 640×480</option><option value="SVGA">SVGA · 800×600</option></select></label><label>JPEG quality<input id="jpegQuality" type="range" min="8" max="30" value="12" /><output id="qualityOutput">12</output></label><label>Light<input id="cameraLight" type="range" min="0" max="100" value="0" /><output id="cameraLightOutput">0%</output></label></div></article>
+              <aside class="side-stack"><article class="panel"><div class="panel-title"><div><small>DISPLAY</small><h3>Camera overlay</h3></div><label class="switch"><input id="overlayToggle" type="checkbox" checked /><span></span></label></div><p class="muted">The heading label is informational only. No compass or IMU is installed.</p></article><article class="panel"><small>STORAGE</small><h3>Saved on this device</h3><dl class="metric-list"><div><dt>Snapshots</dt><dd id="snapshotCount">0</dd></div><div><dt>Recordings</dt><dd id="recordingCount">0</dd></div></dl><button class="button secondary wide" data-view-target="logs">View mission logs</button></article></aside>
+            </div>
+          </section>
+
+          <section id="sonarView" class="view" data-view="sonar">
+            <div class="view-heading"><div><small>LINK ANALYSIS</small><h2>Sonar & signal</h2><p>Real communication measurements and hardware capability status.</p></div><button id="runDiagnostics" class="button primary">Run diagnostics</button></div>
+            <div class="signal-grid">
+              <article class="panel unavailable-card"><div class="sonar-graphic"><i></i><i></i><i></i><span>!</span></div><small>PHYSICAL SONAR</small><h3>Sonar hardware not installed</h3><p>No sonar transducer or ranging sensor appears in the supplied BOM. This page does not invent contacts or distance values.</p><span class="subtle-badge">Capability unavailable</span></article>
+              <article class="panel signal-card"><div class="panel-title"><div><small>LIVE LINK</small><h3>Wi-Fi signal history</h3></div><strong id="signalGrade">Unavailable</strong></div><div id="signalChart" class="signal-chart"><span class="chart-empty">Waiting for measurements…</span></div><div class="metric-cards"><div><span>RSSI</span><strong id="sonarRssi">—</strong></div><div><span>LATENCY</span><strong id="sonarLatency">—</strong></div><div><span>ACK LOSS</span><strong id="sonarLoss">0%</strong></div><div><span>CLIENTS</span><strong id="clientCount">0</strong></div></div></article>
+              <article class="panel history-card"><div class="panel-title"><div><small>SESSION</small><h3>Connection history</h3></div><button id="clearHistory" class="text-button">Clear</button></div><ol id="connectionHistory" class="event-list"><li><i class="neutral"></i><div><strong>No connection yet</strong><span>Waiting for RC-01</span></div></li></ol></article>
+            </div>
+          </section>
+
+          <section id="logsView" class="view" data-view="logs">
+            <div class="view-heading"><div><small>MISSION HISTORY</small><h2>Logs & captures</h2><p>Search and export locally stored operating events.</p></div><div class="heading-actions"><button id="clearLogs" class="button secondary">Clear logs</button><button id="exportLogs" class="button primary">Export CSV</button></div></div>
+            <article class="panel logs-panel"><div class="log-toolbar"><input id="logSearch" type="search" placeholder="Search mission events" aria-label="Search mission events" /><select id="logFilter" aria-label="Filter log type"><option value="all">All events</option><option value="control">Controls</option><option value="camera">Camera</option><option value="system">System</option><option value="error">Errors</option></select></div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Type</th><th>Event</th><th>Details</th></tr></thead><tbody id="logRows"></tbody></table><div id="emptyLogs" class="empty-state"><strong>No matching events</strong><span>Operate the controller or change the filters.</span></div></div></article>
+          </section>
+
+          <section id="settingsView" class="view" data-view="settings">
+            <div class="view-heading"><div><small>CONFIGURATION</small><h2>Vehicle settings</h2><p>Calibrate outputs on a dry bench before arming.</p></div><div class="heading-actions"><button id="exportConfig" class="button secondary">Export config</button><label class="button secondary file-button">Import config<input id="importConfig" type="file" accept="application/json" /></label></div></div>
+            <div class="settings-grid">
+              <article class="panel calibration-panel"><div class="panel-title"><div><small>SAFETY GATE</small><h3>Output calibration</h3></div><span id="calibrationBadge" class="subtle-badge warning">Required</span></div><label class="safety-check"><input id="propsRemoved" type="checkbox" /><span><strong>Propellers are removed</strong><small>I confirm the submarine is secured on a dry bench.</small></span></label><div class="form-grid"><label>ESC minimum (µs)<input id="escMin" type="number" min="800" max="1500" value="1100" /></label><label>ESC neutral (µs)<input id="escNeutral" type="number" min="1200" max="1800" value="1500" /></label><label>ESC maximum (µs)<input id="escMax" type="number" min="1500" max="2200" value="1900" /></label><label>Front surface (µs)<input id="frontSurface" type="number" min="800" max="2200" value="1000" /></label><label>Front dive (µs)<input id="frontDive" type="number" min="800" max="2200" value="2000" /></label><label>Rear surface (µs)<input id="rearSurface" type="number" min="800" max="2200" value="1000" /></label><label>Rear dive (µs)<input id="rearDive" type="number" min="800" max="2200" value="2000" /></label></div><div class="checkbox-row"><label><input id="invertLeft" type="checkbox" /> Invert left ESC</label><label><input id="invertRight" type="checkbox" /> Invert right ESC</label><label><input id="invertFront" type="checkbox" /> Invert front ballast</label><label><input id="invertRear" type="checkbox" /> Invert rear ballast</label></div><button id="saveCalibration" class="button primary wide" disabled>Validate and save calibration</button></article>
+              <aside class="side-stack"><article class="panel"><small>FAILSAFE</small><h3>Link-loss response</h3><label>Timeout<select id="failsafeTimeout"><option value="750">0.75 seconds</option><option value="1000" selected>1.0 second</option><option value="1500">1.5 seconds</option></select></label><p class="muted">On timeout: propulsion neutral and both calibrated ballast servos move to surface.</p><button id="saveFailsafe" class="button secondary wide">Save failsafe</button></article><article class="panel"><small>ACCESS POINT</small><h3>Local Wi-Fi</h3><label>New password<input id="apPassword" type="password" minlength="8" placeholder="At least 8 characters" /></label><button id="saveWifi" class="button secondary wide">Save + restart</button></article><article class="panel"><small>DIAGNOSTICS</small><h3>Device information</h3><dl class="metric-list"><div><dt>Firmware</dt><dd id="firmwareVersion">—</dd></div><div><dt>Protocol</dt><dd>v1</dd></div><div><dt>Address</dt><dd>192.168.4.1</dd></div><div><dt>microSD</dt><dd>Disabled</dd></div></dl></article></aside>
+            </div>
+          </section>
+        </main>
+        <footer><span><i id="footerDot"></i><span id="footerStatus">Not connected</span></span><span>Direct AP · 192.168.4.1</span></footer>
+      </div>
+    </div>
+
+    <dialog id="emergencyDialog"><div class="dialog-icon">↑</div><small>SAFETY OVERRIDE</small><h2>Surface RC-01 now?</h2><p>This immediately neutralizes propulsion and commands both ballast syringes to their calibrated surface positions.</p><div class="dialog-actions"><button id="cancelEmergency" class="button secondary">Cancel</button><button id="confirmEmergency" class="button danger">Confirm emergency surface</button></div></dialog>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/app.js?v=1007"></script>
+  </body>
+</html>
