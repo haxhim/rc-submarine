@@ -10,7 +10,7 @@ This folder contains everything needed for the AI-Thinker ESP32-CAM installed in
 - `data/` — a tiny LittleFS diagnostic page; the full controller UI lives in the APK
 - `platformio.ini` — AI-Thinker ESP32-CAM build configuration
 - `partitions.csv` — 4 MB flash layout
-- `../releases/esp-materials/SubmarineRC-ESP-v1.2.0.bin` — easiest complete image to flash
+- `../releases/esp-materials/SubmarineRC-ESP-v1.2.1.bin` — easiest complete image to flash
 
 Target hardware:
 
@@ -43,7 +43,7 @@ TX and RX are crossed: adapter TX goes to ESP RX (`U0R`), and adapter RX goes to
 
 ## Method 1: flash the ready-made ESP image
 
-The simplest option is `releases/esp-materials/SubmarineRC-ESP-v1.2.0.bin`.
+The simplest option is `releases/esp-materials/SubmarineRC-ESP-v1.2.1.bin`.
 
 ### 1. Install the flashing tool
 
@@ -83,20 +83,20 @@ macOS:
 
 ```bash
 python3 -m esptool --chip esp32 --port /dev/cu.usbserial-XXXX --baud 460800 \
-  write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.2.0.bin
+  write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.2.1.bin
 ```
 
 Windows:
 
 ```powershell
-py -m esptool --chip esp32 --port COM5 --baud 460800 write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.2.0.bin
+py -m esptool --chip esp32 --port COM5 --baud 460800 write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.2.1.bin
 ```
 
 Linux:
 
 ```bash
 python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
-  write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.2.0.bin
+  write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.2.1.bin
 ```
 
 Wait for esptool to report successful verification. If connection is unreliable, repeat download mode and reduce `--baud 460800` to `--baud 115200`.

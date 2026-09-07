@@ -26,12 +26,12 @@ npm run build:android
 npm run package:apk
 ```
 
-The result is `releases/SubmarineRC-v1.2.0.apk`. The supplied APK uses the standard debug signing key and is suitable for sideloading/testing only.
+The result is `releases/SubmarineRC-v1.2.1.apk`. The supplied APK uses the standard debug signing key and is suitable for sideloading/testing only.
 
 Install with:
 
 ```bash
-adb install -r releases/SubmarineRC-v1.2.0.apk
+adb install -r releases/SubmarineRC-v1.2.1.apk
 ```
 
 Android may warn that the Wi-Fi network has no internet. Choose to remain connected. The APK intentionally permits cleartext HTTP only for the private controller address.

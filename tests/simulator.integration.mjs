@@ -86,6 +86,7 @@ test("simulator enforces pilot lock, validation and heartbeat failsafe", async (
 
   await new Promise((resolve) => setTimeout(resolve, 1250));
   const status = await fetch(`http://127.0.0.1:${port}/api/status`).then((response) => response.json());
+  assert.equal(status.cameraReady, true);
   assert.equal(status.armed, false);
   assert.equal(status.failsafe, true);
   assert.equal(status.frontBallast, 0);

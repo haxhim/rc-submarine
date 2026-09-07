@@ -10,6 +10,8 @@
 ## Camera fails or reboots under load
 
 - Confirm this is an AI-Thinker pin mapping and PSRAM is enabled.
+- Install app and ESP firmware version 1.2.1 or newer. It keeps only one MJPEG stream open and reports camera readiness explicitly.
+- Read the serial console at 115200 baud. A successful start prints `Camera initialized successfully`; failures include the exact hexadecimal camera error.
 - GPIO16 must not be connected to the left ESC.
 - Reseat the OV2640 ribbon cable with power disconnected.
 - Improve 5 V regulation, bulk capacitance, star grounding, and separation from ESC/motor wiring.
@@ -44,4 +46,4 @@ Stop testing. Verify the buck regulator is sized for ESP32 and simultaneous serv
 - Enable installation from the app/file manager used to open the APK.
 - Remove an older build with a different signing key if Android reports a signature mismatch.
 - Android 7.0 or newer is required.
-- Use `adb install -r releases/SubmarineRC-v1.2.0.apk` for detailed errors.
+- Use `adb install -r releases/SubmarineRC-v1.2.1.apk` for detailed errors.

@@ -11,7 +11,7 @@
 #include "control_math.h"
 #include "pins.h"
 
-constexpr char FIRMWARE_VERSION[] = "1.2.0";
+constexpr char FIRMWARE_VERSION[] = "1.2.1";
 constexpr char DEFAULT_AP_PASSWORD[] = "NautilusRC!";
 constexpr uint8_t PROTOCOL_VERSION = 1;
 constexpr uint32_t DEFAULT_FAILSAFE_MS = 1000;
@@ -53,6 +53,7 @@ float lightLevel = 0;
 String frameSizeName = "VGA";
 uint8_t jpegQuality = 12;
 volatile float streamFps = 0;
+bool cameraReady = false;
 bool ballastOutputsAttached = false;
 String apPassword = DEFAULT_AP_PASSWORD;
 String apSsid;
@@ -178,6 +179,7 @@ void fillState(JsonObject output, int forFd = -1) {
   output["frameSize"] = frameSizeName;
   output["jpegQuality"] = jpegQuality;
   output["streamFps"] = streamFps;
+  output["cameraReady"] = cameraReady;
   if (calibration.valid) {
     JsonObject saved = output["calibration"].to<JsonObject>();
     saved["escMin"] = calibration.escMin; saved["escNeutral"] = calibration.escNeutral; saved["escMax"] = calibration.escMax;
@@ -420,6 +422,7 @@ esp_err_t statusHandler(httpd_req_t *req) {
 }
 
 esp_err_t captureHandler(httpd_req_t *req) {
+  if (!cameraReady) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Camera is not initialized");
   camera_fb_t *frame = esp_camera_fb_get();
   if (!frame) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Camera capture failed");
   httpd_resp_set_type(req, "image/jpeg");
@@ -439,6 +442,7 @@ esp_err_t streamRedirectHandler(httpd_req_t *req) {
 }
 
 esp_err_t streamHandler(httpd_req_t *req) {
+  if (!cameraReady) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Camera is not initialized");
   static const char *contentType = "multipart/x-mixed-replace;boundary=frame";
   static const char *boundary = "\r\n--frame\r\n";
   httpd_resp_set_type(req, contentType);
@@ -493,6 +497,7 @@ esp_err_t staticHandler(httpd_req_t *req) {
 
 bool initializeCamera() {
   camera_config_t config = {};
+  const bool hasPsram = psramFound();
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
   config.pin_d0 = Y2_GPIO_NUM; config.pin_d1 = Y3_GPIO_NUM; config.pin_d2 = Y4_GPIO_NUM; config.pin_d3 = Y5_GPIO_NUM;
@@ -502,12 +507,48 @@ bool initializeCamera() {
   config.pin_pwdn = PWDN_GPIO_NUM; config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = frameSizeFromName(frameSizeName);
-  config.jpeg_quality = jpegQuality;
-  config.fb_count = psramFound() ? 2 : 1;
-  config.grab_mode = CAMERA_GRAB_LATEST;
-  config.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
-  return esp_camera_init(&config) == ESP_OK;
+  config.frame_size = hasPsram ? frameSizeFromName(frameSizeName) : FRAMESIZE_SVGA;
+  config.jpeg_quality = hasPsram ? jpegQuality : 12;
+  config.fb_count = hasPsram ? 2 : 1;
+  config.grab_mode = hasPsram ? CAMERA_GRAB_LATEST : CAMERA_GRAB_WHEN_EMPTY;
+  config.fb_location = hasPsram ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
+
+  Serial.printf("Camera init: PSRAM %s, frame %s, quality %u\n", hasPsram ? "available" : "not found", frameSizeName.c_str(), config.jpeg_quality);
+  const esp_err_t error = esp_camera_init(&config);
+  if (error != ESP_OK) {
+    Serial.printf("Camera init failed with error 0x%x\n", error);
+    cameraReady = false;
+    return false;
+  }
+
+  sensor_t *sensor = esp_camera_sensor_get();
+  if (sensor) {
+    sensor->set_brightness(sensor, 0);
+    sensor->set_contrast(sensor, 0);
+    sensor->set_saturation(sensor, 0);
+    sensor->set_special_effect(sensor, 0);
+    sensor->set_whitebal(sensor, 1);
+    sensor->set_awb_gain(sensor, 1);
+    sensor->set_wb_mode(sensor, 0);
+    sensor->set_exposure_ctrl(sensor, 1);
+    sensor->set_aec2(sensor, 0);
+    sensor->set_ae_level(sensor, 0);
+    sensor->set_aec_value(sensor, 300);
+    sensor->set_gain_ctrl(sensor, 1);
+    sensor->set_agc_gain(sensor, 0);
+    sensor->set_gainceiling(sensor, GAINCEILING_2X);
+    sensor->set_bpc(sensor, 0);
+    sensor->set_wpc(sensor, 1);
+    sensor->set_raw_gma(sensor, 1);
+    sensor->set_lenc(sensor, 1);
+    sensor->set_hmirror(sensor, 0);
+    sensor->set_vflip(sensor, 0);
+    sensor->set_dcw(sensor, 1);
+    sensor->set_colorbar(sensor, 0);
+  }
+  cameraReady = true;
+  Serial.println("Camera initialized successfully");
+  return true;
 }
 
 void startServers() {
@@ -549,11 +590,7 @@ void setup() {
   }
 
   if (!LittleFS.begin(true)) Serial.println("LittleFS mount failed");
-  if (!initializeCamera()) {
-    Serial.println("Camera initialization failed; rebooting");
-    delay(2000);
-    ESP.restart();
-  }
+  initializeCamera();
 
   const uint64_t chipId = ESP.getEfuseMac();
   char suffix[7];

@@ -36,6 +36,7 @@ type DeviceState = {
   frameSize: string;
   jpegQuality: number;
   streamFps: number;
+  cameraReady: boolean;
   calibration?: CalibrationState;
 };
 
@@ -72,6 +73,7 @@ const defaultState: DeviceState = {
   frameSize: "VGA",
   jpegQuality: 12,
   streamFps: 0,
+  cameraReady: true,
 };
 
 const app = $("app");
@@ -106,10 +108,12 @@ let recordingChunks: Blob[] = [];
 let calibrationLoaded = false;
 let ballastUiInitialized = false;
 let connectionAttempts = 0;
+let activeView: ViewName = "pilot";
 
 const isSimulator = ["localhost", "127.0.0.1"].includes(location.hostname);
 const httpBase = isSimulator ? `${location.protocol}//${location.host}` : "http://192.168.4.1";
 const wsBase = isSimulator ? `ws://${location.host}` : "ws://192.168.4.1";
+const streamBase = isSimulator ? `${httpBase}/stream` : "http://192.168.4.1:81/stream";
 
 function showToast(message: string, isError = false): void {
   toast.textContent = message;
@@ -145,6 +149,7 @@ function addConnection(label: string, good: boolean): void {
 
 function showView(name: ViewName): void {
   if (name !== "pilot") neutralizeMotors();
+  activeView = name;
   document.querySelectorAll<HTMLElement>(".view").forEach((view) => view.classList.toggle("active", view.dataset.view === name));
   document.querySelectorAll<HTMLButtonElement>("[data-view-target]").forEach((button) => {
     const active = button.dataset.viewTarget === name;
@@ -153,7 +158,20 @@ function showView(name: ViewName): void {
   });
   $("pageTitle").textContent = `RC-01 · ${views[name]}`;
   if (name === "logs") renderLogs();
+  refreshActiveCameraStream();
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function stopCameraStreams(): void {
+  pilotFeed.removeAttribute("src");
+  cameraFeed.removeAttribute("src");
+}
+
+function refreshActiveCameraStream(): void {
+  stopCameraStreams();
+  if (socket?.readyState !== WebSocket.OPEN || !state.cameraReady) return;
+  const target = activeView === "camera" ? cameraFeed : activeView === "pilot" ? pilotFeed : null;
+  if (target) target.src = `${streamBase}?ts=${Date.now()}`;
 }
 
 function setLinkStatus(label: string, phase: "online" | "offline" | "connecting"): void {
@@ -168,6 +186,7 @@ function setConnected(connected: boolean): void {
   $("footerDot").style.background = connected ? "var(--green)" : "var(--red)";
   $("footerStatus").textContent = connected ? "Telemetry link active" : "Not connected";
   if (!connected) {
+    stopCameraStreams();
     neutralizeMotors(false);
     ballastUiInitialized = false;
     state.armed = false;
@@ -218,6 +237,10 @@ function updateStateUI(): void {
   $("qualityOutput").textContent = String(state.jpegQuality);
   $("feedFps").textContent = state.streamFps > 0 ? `${state.streamFps.toFixed(1)} FPS` : "STREAM IDLE";
   $("cameraFps").textContent = state.streamFps > 0 ? `${state.streamFps.toFixed(1)} FPS` : "STREAM IDLE";
+  const cameraBadge = $("cameraReadyBadge");
+  cameraBadge.classList.toggle("offline", !connected || !state.cameraReady);
+  cameraBadge.innerHTML = `<i></i>${!connected ? "OFFLINE" : state.cameraReady ? "LIVE" : "CAMERA ERROR"}`;
+  $("cameraStreamStatus").textContent = !connected ? "OFFLINE" : state.cameraReady ? "LIVE" : "CAMERA ERROR";
 
   stateBanner.className = "state-banner";
   if (!connected) {
@@ -279,9 +302,7 @@ function connect(): void {
     send("hello", { client: window.SubmarineAndroid ? "android" : "web", protocol: PROTOCOL_VERSION }, false);
     startHeartbeat();
     refreshStatus();
-    const stream = `${httpBase}/stream?ts=${Date.now()}`;
-    pilotFeed.src = stream;
-    cameraFeed.src = stream;
+    refreshActiveCameraStream();
   });
   current.addEventListener("message", (event) => { if (socket === current) handleMessage(String(event.data)); });
   current.addEventListener("close", () => {
@@ -327,7 +348,9 @@ function handleMessage(text: string): void {
 function applyState(incoming: Partial<DeviceState>): void {
   if (typeof incoming.frontBallastDeg !== "number" && typeof incoming.frontBallast === "number") incoming.frontBallastDeg = Math.round((1 - incoming.frontBallast) * 180);
   if (typeof incoming.rearBallastDeg !== "number" && typeof incoming.rearBallast === "number") incoming.rearBallastDeg = Math.round((1 - incoming.rearBallast) * 180);
+  const cameraReadinessChanged = typeof incoming.cameraReady === "boolean" && incoming.cameraReady !== state.cameraReady;
   state = { ...state, ...incoming };
+  if (cameraReadinessChanged) refreshActiveCameraStream();
   if ((!state.armed || state.failsafe) && (motorInput.left !== 0 || motorInput.right !== 0)) neutralizeMotors(false);
   if (!ballastUiInitialized && typeof state.frontBallastDeg === "number" && typeof state.rearBallastDeg === "number") {
     const master = Math.round((state.frontBallastDeg + state.rearBallastDeg) / 2);

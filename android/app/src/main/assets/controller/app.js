@@ -31,6 +31,7 @@ const defaultState = {
     frameSize: "VGA",
     jpegQuality: 12,
     streamFps: 0,
+    cameraReady: true,
 };
 const app = $("app");
 const boot = $("boot");
@@ -63,9 +64,11 @@ let recordingChunks = [];
 let calibrationLoaded = false;
 let ballastUiInitialized = false;
 let connectionAttempts = 0;
+let activeView = "pilot";
 const isSimulator = ["localhost", "127.0.0.1"].includes(location.hostname);
 const httpBase = isSimulator ? `${location.protocol}//${location.host}` : "http://192.168.4.1";
 const wsBase = isSimulator ? `ws://${location.host}` : "ws://192.168.4.1";
+const streamBase = isSimulator ? `${httpBase}/stream` : "http://192.168.4.1:81/stream";
 function showToast(message, isError = false) {
     toast.textContent = message;
     toast.style.borderColor = isError ? "rgba(240,111,116,.4)" : "";
@@ -98,6 +101,7 @@ function addConnection(label, good) {
 function showView(name) {
     if (name !== "pilot")
         neutralizeMotors();
+    activeView = name;
     document.querySelectorAll(".view").forEach((view) => view.classList.toggle("active", view.dataset.view === name));
     document.querySelectorAll("[data-view-target]").forEach((button) => {
         const active = button.dataset.viewTarget === name;
@@ -108,7 +112,20 @@ function showView(name) {
     $("pageTitle").textContent = `RC-01 · ${views[name]}`;
     if (name === "logs")
         renderLogs();
+    refreshActiveCameraStream();
     window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function stopCameraStreams() {
+    pilotFeed.removeAttribute("src");
+    cameraFeed.removeAttribute("src");
+}
+function refreshActiveCameraStream() {
+    stopCameraStreams();
+    if (socket?.readyState !== WebSocket.OPEN || !state.cameraReady)
+        return;
+    const target = activeView === "camera" ? cameraFeed : activeView === "pilot" ? pilotFeed : null;
+    if (target)
+        target.src = `${streamBase}?ts=${Date.now()}`;
 }
 function setLinkStatus(label, phase) {
     linkBadge.classList.toggle("offline", phase === "offline");
@@ -121,6 +138,7 @@ function setConnected(connected) {
     $("footerDot").style.background = connected ? "var(--green)" : "var(--red)";
     $("footerStatus").textContent = connected ? "Telemetry link active" : "Not connected";
     if (!connected) {
+        stopCameraStreams();
         neutralizeMotors(false);
         ballastUiInitialized = false;
         state.armed = false;
@@ -171,6 +189,10 @@ function updateStateUI() {
     $("qualityOutput").textContent = String(state.jpegQuality);
     $("feedFps").textContent = state.streamFps > 0 ? `${state.streamFps.toFixed(1)} FPS` : "STREAM IDLE";
     $("cameraFps").textContent = state.streamFps > 0 ? `${state.streamFps.toFixed(1)} FPS` : "STREAM IDLE";
+    const cameraBadge = $("cameraReadyBadge");
+    cameraBadge.classList.toggle("offline", !connected || !state.cameraReady);
+    cameraBadge.innerHTML = `<i></i>${!connected ? "OFFLINE" : state.cameraReady ? "LIVE" : "CAMERA ERROR"}`;
+    $("cameraStreamStatus").textContent = !connected ? "OFFLINE" : state.cameraReady ? "LIVE" : "CAMERA ERROR";
     stateBanner.className = "state-banner";
     if (!connected) {
         stateBanner.classList.add("warning");
@@ -239,9 +261,7 @@ function connect() {
         send("hello", { client: window.SubmarineAndroid ? "android" : "web", protocol: PROTOCOL_VERSION }, false);
         startHeartbeat();
         refreshStatus();
-        const stream = `${httpBase}/stream?ts=${Date.now()}`;
-        pilotFeed.src = stream;
-        cameraFeed.src = stream;
+        refreshActiveCameraStream();
     });
     current.addEventListener("message", (event) => { if (socket === current)
         handleMessage(String(event.data)); });
@@ -293,7 +313,10 @@ function applyState(incoming) {
         incoming.frontBallastDeg = Math.round((1 - incoming.frontBallast) * 180);
     if (typeof incoming.rearBallastDeg !== "number" && typeof incoming.rearBallast === "number")
         incoming.rearBallastDeg = Math.round((1 - incoming.rearBallast) * 180);
+    const cameraReadinessChanged = typeof incoming.cameraReady === "boolean" && incoming.cameraReady !== state.cameraReady;
     state = { ...state, ...incoming };
+    if (cameraReadinessChanged)
+        refreshActiveCameraStream();
     if ((!state.armed || state.failsafe) && (motorInput.left !== 0 || motorInput.right !== 0))
         neutralizeMotors(false);
     if (!ballastUiInitialized && typeof state.frontBallastDeg === "number" && typeof state.rearBallastDeg === "number") {
