@@ -19,7 +19,7 @@ const calibration = {
 
 const state = {
   calibrated: true, armed: false, failsafe: false,
-  rssi: -48, uptimeMs: 0, clients: 0, firmware: "simulator-1.2.1", cameraReady: true,
+  rssi: -48, uptimeMs: 0, clients: 0, firmware: "simulator-1.3.0", cameraReady: true,
   light: 0, frontBallast: 0, rearBallast: 0,
   frontBallastDeg: 180, rearBallastDeg: 180,
   frameSize: "VGA", jpegQuality: 12, failsafeMs: 1000,

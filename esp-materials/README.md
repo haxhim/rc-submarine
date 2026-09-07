@@ -10,7 +10,7 @@ This folder contains everything needed for the AI-Thinker ESP32-CAM installed in
 - `data/` — a tiny LittleFS diagnostic page; the full controller UI lives in the APK
 - `platformio.ini` — AI-Thinker ESP32-CAM build configuration
 - `partitions.csv` — 4 MB flash layout
-- `../releases/esp-materials/SubmarineRC-ESP-v1.2.1.bin` — easiest complete image to flash
+- `../releases/esp-materials/SubmarineRC-ESP-v1.3.0.bin` — easiest complete image to flash
 
 Target hardware:
 
@@ -19,7 +19,7 @@ Target hardware:
 - Direct local Wi-Fi at `192.168.4.1`
 - microSD disabled because its pins are used for the controls
 
-GPIO16 is deliberately not used for an ESC because it is connected to PSRAM. The left ESC signal is GPIO14 and the right ESC signal is GPIO15.
+GPIO16 is deliberately not used for an ESC because it is connected to PSRAM. The bench-confirmed mapping is left ESC GPIO15 and right ESC GPIO14.
 
 ## Before connecting the programmer
 
@@ -43,7 +43,7 @@ TX and RX are crossed: adapter TX goes to ESP RX (`U0R`), and adapter RX goes to
 
 ## Method 1: flash the ready-made ESP image
 
-The simplest option is `releases/esp-materials/SubmarineRC-ESP-v1.2.1.bin`.
+The simplest option is `releases/esp-materials/SubmarineRC-ESP-v1.3.0.bin`.
 
 ### 1. Install the flashing tool
 
@@ -83,20 +83,20 @@ macOS:
 
 ```bash
 python3 -m esptool --chip esp32 --port /dev/cu.usbserial-XXXX --baud 460800 \
-  write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.2.1.bin
+  write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.3.0.bin
 ```
 
 Windows:
 
 ```powershell
-py -m esptool --chip esp32 --port COM5 --baud 460800 write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.2.1.bin
+py -m esptool --chip esp32 --port COM5 --baud 460800 write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.3.0.bin
 ```
 
 Linux:
 
 ```bash
 python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
-  write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.2.1.bin
+  write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.3.0.bin
 ```
 
 Wait for esptool to report successful verification. If connection is unreliable, repeat download mode and reduce `--baud 460800` to `--baud 115200`.
@@ -174,6 +174,8 @@ python3 -m esptool --chip esp32 --port /dev/cu.usbserial-XXXX --baud 460800 writ
 The ESP will not arm propulsion until calibration is valid. A lost pilot heartbeat neutralizes both ESCs and commands both calibrated ballast servos to surface.
 
 On the Pilot page, the left and right ESCs have separate forward/neutral/reverse sliders. The sliders automatically return to neutral when released. Ballast uses degrees: `0°` commands the calibrated dive endpoint and `180°` commands the calibrated surface endpoint. There is no separate pump output in version 1.2.
+
+Version 1.3.0 incorporates the confirmed full demo sketch: left ESC GPIO15, right ESC GPIO14, front ballast GPIO12, rear ballast GPIO13, light GPIO4, ESP32Servo at 50 Hz, a QVGA/quality-12 OV2640 startup profile, and 1460-byte MJPEG chunks on port 81. Streaming runs in a separate ESP32 task so it cannot block motor commands or the heartbeat failsafe. Live actuator commands use `/set`, protected by a random token issued only to the active WebSocket pilot.
 
 ## Common flashing problems
 

@@ -12,7 +12,7 @@ Calibration is intentionally required before propulsion can arm. Perform it in a
 
 ## ESC values
 
-Start with minimum 1100 µs, neutral 1500 µs, and maximum 1900 µs. These are conservative generic values, not guaranteed values for your ESC model. Consult the ESC manual before changing them.
+The supplied bench-tested profile starts at minimum 1000 µs, neutral 1500 µs, and maximum 2000 µs, matching the working reference sketch. These values are not guaranteed for every ESC model; confirm them with the propellers removed.
 
 Save calibration while propulsion remains disarmed. Arm briefly at a low throttle limit and confirm each motor responds in the expected direction. Use left/right inversion for software correction. If an ESC requires a special endpoint programming sequence, follow its manual with propellers removed; the application does not automatically guess that sequence.
 
@@ -20,7 +20,7 @@ The Pilot page provides separate left and right sliders. Both are neutral at the
 
 ## Ballast endpoints
 
-Use small adjustments. Determine the front surface/empty and dive/full pulse values without letting the syringe bottom out, the linkage bind, or the servo remain stalled. Repeat for the rear tank. Typical hobby-servo pulses fall within 1000–2000 µs, but the software accepts only the broader safety envelope of 800–2200 µs.
+The reference sketch attaches both ballast servos at 500–2500 µs. The supplied profile therefore maps `0° Dive` to 500 µs and `180° Surface` to 2500 µs. Use small adjustments and stop before a syringe bottoms out, linkage binds, or servo stalls. The app accepts 500–2500 µs for servo endpoints.
 
 After saving, use the angle controls while observing current draw and mechanical travel. `0°` is the calibrated dive position, `90°` is midpoint and `180°` is the calibrated surface position. The master slider moves both servos; front/rear trims add up to ±30° and clamp safely within 0–180°. Stop immediately if a servo chatters, stalls, overheats, or pushes the syringe against its hard stop. Reverse a servo with its inversion checkbox instead of crossing the endpoint meaning.
 

@@ -3,6 +3,7 @@
 #include <LittleFS.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <ESP32Servo.h>
 #include <memory>
 #include "esp_camera.h"
 #include "esp_http_server.h"
@@ -11,20 +12,20 @@
 #include "control_math.h"
 #include "pins.h"
 
-constexpr char FIRMWARE_VERSION[] = "1.2.1";
+constexpr char FIRMWARE_VERSION[] = "1.3.0";
 constexpr char DEFAULT_AP_PASSWORD[] = "NautilusRC!";
 constexpr uint8_t PROTOCOL_VERSION = 1;
 constexpr uint32_t DEFAULT_FAILSAFE_MS = 1000;
 constexpr uint32_t PWM_PERIOD_US = 20000;
 
 struct Calibration {
-  uint16_t escMin = 1100;
+  uint16_t escMin = 1000;
   uint16_t escNeutral = 1500;
-  uint16_t escMax = 1900;
-  uint16_t frontSurface = 1000;
-  uint16_t frontDive = 2000;
-  uint16_t rearSurface = 1000;
-  uint16_t rearDive = 2000;
+  uint16_t escMax = 2000;
+  uint16_t frontSurface = 2500;
+  uint16_t frontDive = 500;
+  uint16_t rearSurface = 2500;
+  uint16_t rearDive = 500;
   bool invertLeft = false;
   bool invertRight = false;
   bool invertFront = false;
@@ -35,12 +36,18 @@ struct Calibration {
 Preferences preferences;
 Calibration calibration;
 httpd_handle_t controlServer = nullptr;
-httpd_handle_t streamServer = nullptr;
+WiFiServer mjpegServer(81);
 SemaphoreHandle_t stateMutex;
+Servo leftEsc;
+Servo rightEsc;
+Servo frontServo;
+Servo rearServo;
 
 volatile bool armed = false;
 volatile bool failsafe = false;
 volatile int pilotFd = -1;
+volatile uint32_t pilotToken = 0;
+volatile uint32_t lastActuatorSeq = 0;
 volatile uint32_t lastHeartbeat = 0;
 uint32_t failsafeMs = DEFAULT_FAILSAFE_MS;
 float frontBallast = 0;
@@ -50,7 +57,7 @@ float rearBallastDeg = 180;
 float leftMotor = 0;
 float rightMotor = 0;
 float lightLevel = 0;
-String frameSizeName = "VGA";
+String frameSizeName = "QVGA";
 uint8_t jpegQuality = 12;
 volatile float streamFps = 0;
 bool cameraReady = false;
@@ -59,8 +66,10 @@ String apPassword = DEFAULT_AP_PASSWORD;
 String apSsid;
 
 void writePulse(int channel, uint16_t pulseUs) {
-  const uint32_t duty = (static_cast<uint32_t>(pulseUs) * 65535UL) / PWM_PERIOD_US;
-  ledcWrite(channel, duty);
+  if (channel == LEFT_ESC_CHANNEL) leftEsc.writeMicroseconds(pulseUs);
+  else if (channel == RIGHT_ESC_CHANNEL) rightEsc.writeMicroseconds(pulseUs);
+  else if (channel == FRONT_SERVO_CHANNEL && ballastOutputsAttached) frontServo.writeMicroseconds(pulseUs);
+  else if (channel == REAR_SERVO_CHANNEL && ballastOutputsAttached) rearServo.writeMicroseconds(pulseUs);
 }
 
 void neutralizePropulsion() {
@@ -92,8 +101,10 @@ void setBallastAngle(float frontDeg, float rearDeg) {
 
 void attachBallastOutputs() {
   if (ballastOutputsAttached) return;
-  ledcSetup(FRONT_SERVO_CHANNEL, 50, 16); ledcAttachPin(FRONT_BALLAST_PIN, FRONT_SERVO_CHANNEL);
-  ledcSetup(REAR_SERVO_CHANNEL, 50, 16); ledcAttachPin(REAR_BALLAST_PIN, REAR_SERVO_CHANNEL);
+  frontServo.setPeriodHertz(50);
+  rearServo.setPeriodHertz(50);
+  frontServo.attach(FRONT_BALLAST_PIN, 500, 2500);
+  rearServo.attach(REAR_BALLAST_PIN, 500, 2500);
   ballastOutputsAttached = true;
 }
 
@@ -107,29 +118,31 @@ void safeSurface(bool markFailsafe) {
 bool loadSettings() {
   preferences.begin("subrc", true);
   calibration.valid = preferences.getBool("cal_valid", false);
-  calibration.escMin = preferences.getUShort("esc_min", 1100);
+  calibration.escMin = preferences.getUShort("esc_min", 1000);
   calibration.escNeutral = preferences.getUShort("esc_neu", 1500);
-  calibration.escMax = preferences.getUShort("esc_max", 1900);
-  calibration.frontSurface = preferences.getUShort("front_s", 1000);
-  calibration.frontDive = preferences.getUShort("front_d", 2000);
-  calibration.rearSurface = preferences.getUShort("rear_s", 1000);
-  calibration.rearDive = preferences.getUShort("rear_d", 2000);
+  calibration.escMax = preferences.getUShort("esc_max", 2000);
+  calibration.frontSurface = preferences.getUShort("front_s", 2500);
+  calibration.frontDive = preferences.getUShort("front_d", 500);
+  calibration.rearSurface = preferences.getUShort("rear_s", 2500);
+  calibration.rearDive = preferences.getUShort("rear_d", 500);
   calibration.invertLeft = preferences.getBool("inv_left", false);
   calibration.invertRight = preferences.getBool("inv_right", false);
   calibration.invertFront = preferences.getBool("inv_front", false);
   calibration.invertRear = preferences.getBool("inv_rear", false);
   failsafeMs = preferences.getUInt("failsafe", DEFAULT_FAILSAFE_MS);
   apPassword = preferences.getString("ap_pass", DEFAULT_AP_PASSWORD);
-  frameSizeName = preferences.getString("frame", "VGA");
+  frameSizeName = preferences.getString("frame", "QVGA");
   jpegQuality = preferences.getUChar("quality", 12);
   preferences.end();
   const bool pulsesValid = validPulse(calibration.escMin) && validPulse(calibration.escNeutral) && validPulse(calibration.escMax)
     && calibration.escMin < calibration.escNeutral && calibration.escNeutral < calibration.escMax
-    && validPulse(calibration.frontSurface) && validPulse(calibration.frontDive)
-    && validPulse(calibration.rearSurface) && validPulse(calibration.rearDive);
+    && calibration.frontSurface >= 500 && calibration.frontSurface <= 2500
+    && calibration.frontDive >= 500 && calibration.frontDive <= 2500
+    && calibration.rearSurface >= 500 && calibration.rearSurface <= 2500
+    && calibration.rearDive >= 500 && calibration.rearDive <= 2500;
   if (!calibration.valid || !pulsesValid) calibration = Calibration{};
   if (!(failsafeMs == 750 || failsafeMs == 1000 || failsafeMs == 1500)) failsafeMs = DEFAULT_FAILSAFE_MS;
-  if (!(frameSizeName == "QVGA" || frameSizeName == "VGA" || frameSizeName == "SVGA")) frameSizeName = "VGA";
+  if (!(frameSizeName == "QVGA" || frameSizeName == "VGA" || frameSizeName == "SVGA")) frameSizeName = "QVGA";
   if (jpegQuality < 8 || jpegQuality > 30) jpegQuality = 12;
   if (apPassword.length() < 8 || apPassword.length() > 63) apPassword = DEFAULT_AP_PASSWORD;
   return calibration.valid;
@@ -217,6 +230,7 @@ esp_err_t sendAck(httpd_req_t *req, JsonVariantConst request, bool ok, const cha
   response["seq"] = request["seq"] | 0;
   response["ok"] = ok;
   if (message[0]) response["message"] = message;
+  if (pilotFd == httpd_req_to_sockfd(req) && pilotToken != 0) response["pilotToken"] = pilotToken;
   JsonObject state = response["state"].to<JsonObject>();
   fillState(state, httpd_req_to_sockfd(req));
   return sendWs(req, response);
@@ -260,12 +274,14 @@ esp_err_t wsHandler(httpd_req_t *req) {
   if (type == "claim") {
     if (pilotFd >= 0 && pilotFd != fd) return sendAck(req, request, false, "Another controller is the active pilot");
     pilotFd = fd;
+    do { pilotToken = esp_random(); } while (pilotToken == 0);
+    lastActuatorSeq = 0;
     lastHeartbeat = millis();
     failsafe = false;
     return sendAck(req, request, true, "Pilot control granted");
   }
   if (type == "release") {
-    if (pilotFd == fd) { safeSurface(false); pilotFd = -1; }
+    if (pilotFd == fd) { safeSurface(false); pilotFd = -1; pilotToken = 0; }
     return sendAck(req, request, true, "Pilot control released");
   }
   if (type == "arm") {
@@ -337,7 +353,8 @@ esp_err_t wsHandler(httpd_req_t *req) {
     if (!requirePilot(req, request)) return ESP_OK;
     const int values[] = { request["escMin"] | 0, request["escNeutral"] | 0, request["escMax"] | 0, request["frontSurface"] | 0, request["frontDive"] | 0, request["rearSurface"] | 0, request["rearDive"] | 0 };
     bool valuesValid = request["benchConfirmed"] == true && values[0] < values[1] && values[1] < values[2];
-    for (int value : values) valuesValid = valuesValid && value >= 800 && value <= 2200;
+    for (int index = 0; index < 3; index++) valuesValid = valuesValid && values[index] >= 800 && values[index] <= 2200;
+    for (int index = 3; index < 7; index++) valuesValid = valuesValid && values[index] >= 500 && values[index] <= 2500;
     if (!valuesValid) return sendAck(req, request, false, "Invalid or unsafe calibration values");
     safeSurface(false);
     calibration.escMin = values[0]; calibration.escNeutral = values[1]; calibration.escMax = values[2];
@@ -384,7 +401,8 @@ esp_err_t wsHandler(httpd_req_t *req) {
     if (!importedCalibration.isNull()) {
       const int values[] = { importedCalibration["escMin"] | 0, importedCalibration["escNeutral"] | 0, importedCalibration["escMax"] | 0, importedCalibration["frontSurface"] | 0, importedCalibration["frontDive"] | 0, importedCalibration["rearSurface"] | 0, importedCalibration["rearDive"] | 0 };
       bool valid = values[0] < values[1] && values[1] < values[2];
-      for (int value : values) valid = valid && value >= 800 && value <= 2200;
+      for (int index = 0; index < 3; index++) valid = valid && values[index] >= 800 && values[index] <= 2200;
+      for (int index = 3; index < 7; index++) valid = valid && values[index] >= 500 && values[index] <= 2500;
       if (!valid) return sendAck(req, request, false, "Imported calibration is invalid");
       safeSurface(false);
       calibration.escMin = values[0]; calibration.escNeutral = values[1]; calibration.escMax = values[2];
@@ -418,6 +436,77 @@ esp_err_t statusHandler(httpd_req_t *req) {
   JsonDocument document;
   fillState(document.to<JsonObject>());
   document.remove("pilot");
+  return sendJson(req, document);
+}
+
+bool queryFloat(const char *query, const char *key, float &value) {
+  char raw[24];
+  if (httpd_query_key_value(query, key, raw, sizeof(raw)) != ESP_OK) return false;
+  char *end = nullptr;
+  value = strtof(raw, &end);
+  return end != raw && *end == '\0';
+}
+
+bool queryUnsigned(const char *query, const char *key, uint32_t &value) {
+  char raw[16];
+  if (httpd_query_key_value(query, key, raw, sizeof(raw)) != ESP_OK) return false;
+  char *end = nullptr;
+  const unsigned long parsed = strtoul(raw, &end, 10);
+  if (end == raw || *end != '\0') return false;
+  value = static_cast<uint32_t>(parsed);
+  return true;
+}
+
+// Lightweight actuator path based on the proven WebServer /set bench sketch.
+// A random token binds requests to the single active WebSocket pilot.
+esp_err_t setHandler(httpd_req_t *req) {
+  char query[256] = {};
+  if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing control values");
+  uint32_t token = 0;
+  uint32_t actuatorSeq = 0;
+  if (pilotFd < 0 || pilotToken == 0 || !queryUnsigned(query, "token", token) || token != pilotToken) return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Active pilot token required");
+  if (!queryUnsigned(query, "seq", actuatorSeq) || actuatorSeq <= lastActuatorSeq) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Stale control sequence");
+  if (!calibration.valid) return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Calibration required");
+
+  float value = 0.0f;
+  float left = leftMotor;
+  float right = rightMotor;
+  float limit = 1.0f;
+  const bool hasLeft = queryFloat(query, "left", left);
+  const bool hasRight = queryFloat(query, "right", right);
+  queryFloat(query, "limit", limit);
+  if (hasLeft || hasRight) {
+    if (!armed) return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Propulsion is disarmed");
+    if (left < -1.0f || left > 1.0f || right < -1.0f || right > 1.0f || limit < 0.0f || limit > 1.0f) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Motor values must be -1 to 1");
+    MotorMix levels = directMotorLevels(left, right, limit);
+    if (calibration.invertLeft) levels.left *= -1;
+    if (calibration.invertRight) levels.right *= -1;
+    leftMotor = levels.left;
+    rightMotor = levels.right;
+    writePulse(LEFT_ESC_CHANNEL, normalizedPulse(levels.left, calibration.escMin, calibration.escNeutral, calibration.escMax));
+    writePulse(RIGHT_ESC_CHANNEL, normalizedPulse(levels.right, calibration.escMin, calibration.escNeutral, calibration.escMax));
+  }
+
+  float frontDeg = frontBallastDeg;
+  float rearDeg = rearBallastDeg;
+  const bool hasFront = queryFloat(query, "frontDeg", frontDeg);
+  const bool hasRear = queryFloat(query, "rearDeg", rearDeg);
+  if (hasFront || hasRear) {
+    if (!validBallastAngle(frontDeg) || !validBallastAngle(rearDeg)) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Ballast must be 0 to 180 degrees");
+    setBallastAngle(frontDeg, rearDeg);
+  }
+
+  if (queryFloat(query, "light", value)) {
+    if (value < 0.0f || value > 1.0f) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Light must be 0 to 1");
+    lightLevel = value;
+    ledcWrite(LIGHT_CHANNEL, static_cast<uint8_t>(lightLevel * 255.0f));
+  }
+
+  lastActuatorSeq = actuatorSeq;
+  JsonDocument document;
+  document["ok"] = true;
+  JsonObject current = document["state"].to<JsonObject>();
+  fillState(current, pilotFd);
   return sendJson(req, document);
 }
 
@@ -468,6 +557,57 @@ esp_err_t streamHandler(httpd_req_t *req) {
   return ESP_OK;
 }
 
+void streamCameraClient(WiFiClient client) {
+  client.setNoDelay(true);
+  const uint32_t requestDeadline = millis() + 2000;
+  while (client.connected() && !client.available() && static_cast<int32_t>(requestDeadline - millis()) > 0) delay(1);
+  if (!client.connected() || !client.available()) { client.stop(); return; }
+  while (client.available()) client.read();
+
+  client.print(
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"
+    "Cache-Control: no-cache, no-store, must-revalidate\r\n"
+    "Pragma: no-cache\r\n"
+    "Access-Control-Allow-Origin: *\r\n"
+    "Connection: close\r\n\r\n"
+  );
+
+  uint32_t frames = 0;
+  uint32_t fpsStarted = millis();
+  Serial.println("Camera client connected");
+  while (client.connected() && cameraReady) {
+    camera_fb_t *frame = esp_camera_fb_get();
+    if (!frame) break;
+    client.printf("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", frame->len);
+    size_t sent = 0;
+    while (sent < frame->len && client.connected()) {
+      const size_t chunk = min(static_cast<size_t>(1460), frame->len - sent);
+      const size_t written = client.write(frame->buf + sent, chunk);
+      if (written == 0) break;
+      sent += written;
+    }
+    esp_camera_fb_return(frame);
+    if (sent == 0 || !client.connected()) break;
+    client.print("\r\n");
+    frames++;
+    const uint32_t elapsed = millis() - fpsStarted;
+    if (elapsed >= 1000) { streamFps = frames * 1000.0f / elapsed; frames = 0; fpsStarted = millis(); }
+    delay(1);
+  }
+  streamFps = 0;
+  client.stop();
+  Serial.println("Camera client disconnected");
+}
+
+void cameraStreamTask(void *) {
+  for (;;) {
+    WiFiClient client = mjpegServer.available();
+    if (client) streamCameraClient(client);
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
+}
+
 String contentTypeFor(const String &path) {
   if (path.endsWith(".html")) return "text/html";
   if (path.endsWith(".js")) return "text/javascript";
@@ -507,13 +647,16 @@ bool initializeCamera() {
   config.pin_pwdn = PWDN_GPIO_NUM; config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = hasPsram ? frameSizeFromName(frameSizeName) : FRAMESIZE_SVGA;
-  config.jpeg_quality = hasPsram ? jpegQuality : 12;
+  // Bench-proven low-latency startup profile from the working demo sketch.
+  config.frame_size = hasPsram ? FRAMESIZE_QVGA : FRAMESIZE_QQVGA;
+  config.jpeg_quality = hasPsram ? 12 : 14;
   config.fb_count = hasPsram ? 2 : 1;
   config.grab_mode = hasPsram ? CAMERA_GRAB_LATEST : CAMERA_GRAB_WHEN_EMPTY;
   config.fb_location = hasPsram ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
 
-  Serial.printf("Camera init: PSRAM %s, frame %s, quality %u\n", hasPsram ? "available" : "not found", frameSizeName.c_str(), config.jpeg_quality);
+  frameSizeName = hasPsram ? "QVGA" : "QQVGA";
+  jpegQuality = config.jpeg_quality;
+  Serial.printf("Camera init: PSRAM %s, frame %s, quality %u\n", hasPsram ? "available" : "not found", frameSizeName.c_str(), jpegQuality);
   const esp_err_t error = esp_camera_init(&config);
   if (error != ESP_OK) {
     Serial.printf("Camera init failed with error 0x%x\n", error);
@@ -523,28 +666,13 @@ bool initializeCamera() {
 
   sensor_t *sensor = esp_camera_sensor_get();
   if (sensor) {
+    sensor->set_framesize(sensor, hasPsram ? FRAMESIZE_QVGA : FRAMESIZE_QQVGA);
+    sensor->set_quality(sensor, jpegQuality);
+    sensor->set_hmirror(sensor, 0);
+    sensor->set_vflip(sensor, 0);
     sensor->set_brightness(sensor, 0);
     sensor->set_contrast(sensor, 0);
     sensor->set_saturation(sensor, 0);
-    sensor->set_special_effect(sensor, 0);
-    sensor->set_whitebal(sensor, 1);
-    sensor->set_awb_gain(sensor, 1);
-    sensor->set_wb_mode(sensor, 0);
-    sensor->set_exposure_ctrl(sensor, 1);
-    sensor->set_aec2(sensor, 0);
-    sensor->set_ae_level(sensor, 0);
-    sensor->set_aec_value(sensor, 300);
-    sensor->set_gain_ctrl(sensor, 1);
-    sensor->set_agc_gain(sensor, 0);
-    sensor->set_gainceiling(sensor, GAINCEILING_2X);
-    sensor->set_bpc(sensor, 0);
-    sensor->set_wpc(sensor, 1);
-    sensor->set_raw_gma(sensor, 1);
-    sensor->set_lenc(sensor, 1);
-    sensor->set_hmirror(sensor, 0);
-    sensor->set_vflip(sensor, 0);
-    sensor->set_dcw(sensor, 1);
-    sensor->set_colorbar(sensor, 0);
   }
   cameraReady = true;
   Serial.println("Camera initialized successfully");
@@ -553,26 +681,25 @@ bool initializeCamera() {
 
 void startServers() {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-  config.max_uri_handlers = 8;
+  config.max_uri_handlers = 9;
   config.uri_match_fn = httpd_uri_match_wildcard;
   httpd_start(&controlServer, &config);
   httpd_uri_t ws = { .uri = "/ws", .method = HTTP_GET, .handler = wsHandler, .user_ctx = nullptr, .is_websocket = true };
   httpd_uri_t status = { .uri = "/api/status", .method = HTTP_GET, .handler = statusHandler, .user_ctx = nullptr };
   httpd_uri_t capture = { .uri = "/capture", .method = HTTP_GET, .handler = captureHandler, .user_ctx = nullptr };
+  httpd_uri_t set = { .uri = "/set", .method = HTTP_GET, .handler = setHandler, .user_ctx = nullptr };
   httpd_uri_t redirect = { .uri = "/stream", .method = HTTP_GET, .handler = streamRedirectHandler, .user_ctx = nullptr };
   httpd_uri_t files = { .uri = "/*", .method = HTTP_GET, .handler = staticHandler, .user_ctx = nullptr };
   httpd_register_uri_handler(controlServer, &ws);
   httpd_register_uri_handler(controlServer, &status);
   httpd_register_uri_handler(controlServer, &capture);
+  httpd_register_uri_handler(controlServer, &set);
   httpd_register_uri_handler(controlServer, &redirect);
   httpd_register_uri_handler(controlServer, &files);
 
-  httpd_config_t streamConfig = HTTPD_DEFAULT_CONFIG();
-  streamConfig.server_port = 81;
-  streamConfig.ctrl_port = 32769;
-  httpd_start(&streamServer, &streamConfig);
-  httpd_uri_t stream = { .uri = "/stream", .method = HTTP_GET, .handler = streamHandler, .user_ctx = nullptr };
-  httpd_register_uri_handler(streamServer, &stream);
+  mjpegServer.begin();
+  mjpegServer.setNoDelay(true);
+  xTaskCreatePinnedToCore(cameraStreamTask, "mjpeg", 8192, nullptr, 1, nullptr, 0);
 }
 
 void setup() {
@@ -580,8 +707,13 @@ void setup() {
   stateMutex = xSemaphoreCreateMutex();
   loadSettings();
 
-  ledcSetup(LEFT_ESC_CHANNEL, 50, 16); ledcAttachPin(LEFT_ESC_PIN, LEFT_ESC_CHANNEL);
-  ledcSetup(RIGHT_ESC_CHANNEL, 50, 16); ledcAttachPin(RIGHT_ESC_PIN, RIGHT_ESC_CHANNEL);
+  // Keep timer 0 free for the OV2640 XCLK and timer 3 for the flash LED.
+  // All four 50 Hz ESC/servo outputs share LEDC timer 1.
+  ESP32PWM::allocateTimer(1);
+  leftEsc.setPeriodHertz(50);
+  rightEsc.setPeriodHertz(50);
+  leftEsc.attach(LEFT_ESC_PIN, 1000, 2000);
+  rightEsc.attach(RIGHT_ESC_PIN, 1000, 2000);
   neutralizePropulsion();
   ledcSetup(LIGHT_CHANNEL, 5000, 8); ledcAttachPin(LIGHT_PIN, LIGHT_CHANNEL); ledcWrite(LIGHT_CHANNEL, 0);
   if (calibration.valid) {
@@ -607,6 +739,8 @@ void loop() {
   if (pilotFd >= 0 && millis() - lastHeartbeat > failsafeMs) {
     safeSurface(true);
     pilotFd = -1;
+    pilotToken = 0;
+    lastActuatorSeq = 0;
     Serial.println("FAILSAFE: heartbeat timeout; surfaced");
   }
   delay(10);

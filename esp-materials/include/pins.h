@@ -21,8 +21,9 @@
 // Control outputs. GPIO16 is intentionally unused because it is wired to PSRAM.
 constexpr int FRONT_BALLAST_PIN = 12;
 constexpr int REAR_BALLAST_PIN = 13;
-constexpr int LEFT_ESC_PIN = 14;
-constexpr int RIGHT_ESC_PIN = 15;
+// Confirmed by the working bench sketch: left motor is GPIO15, right is GPIO14.
+constexpr int LEFT_ESC_PIN = 15;
+constexpr int RIGHT_ESC_PIN = 14;
 constexpr int LIGHT_PIN = 4;
 
 constexpr int FRONT_SERVO_CHANNEL = 2;
@@ -30,4 +31,3 @@ constexpr int REAR_SERVO_CHANNEL = 3;
 constexpr int LEFT_ESC_CHANNEL = 4;
 constexpr int RIGHT_ESC_CHANNEL = 5;
 constexpr int LIGHT_CHANNEL = 6;
-

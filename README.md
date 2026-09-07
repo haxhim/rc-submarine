@@ -42,8 +42,10 @@ npm test
 2. Open the step-by-step [ESP Materials flashing guide](esp-materials/README.md).
 3. Flash the ESP32-CAM with GPIO0 connected to GND, then remove GPIO0 from GND and reset.
 4. Join `SUB-RC-<device-id>` using the default password `NautilusRC!`.
-5. Install the Android app from `releases/SubmarineRC-v1.2.1.apk`. Its UI opens immediately and connects directly to the ESP at `192.168.4.1` when the submarine Wi-Fi is available.
+5. Install the Android app from `releases/SubmarineRC-v1.3.0.apk`. Its UI opens immediately and connects directly to the ESP at `192.168.4.1` when the submarine Wi-Fi is available.
 6. With propellers removed, claim control and complete [CALIBRATION.md](docs/CALIBRATION.md).
+
+The v1.3.0 firmware incorporates the working full demo: ESP32Servo-driven outputs, left ESC GPIO15, right ESC GPIO14, ESC pulses 1000/1500/2000 µs, ballast servo endpoints 500/2500 µs, QVGA low-latency OV2640 startup, and a raw port-81 MJPEG stream. You must still confirm the propellers are removed and save calibration once before arming.
 
 Change the default Wi-Fi password before field use. The controller is intentionally limited to two simultaneous Wi-Fi clients and one active pilot.
 
@@ -64,7 +66,7 @@ The ready-to-flash ESP image is written as one file at address `0x0`. Individual
 
 | File | Flash address |
 | --- | ---: |
-| `SubmarineRC-ESP-v1.2.1.bin` | `0x0` |
+| `SubmarineRC-ESP-v1.3.0.bin` | `0x0` |
 | `bootloader.bin` | `0x1000` |
 | `partitions.bin` | `0x8000` |
 | `boot_app0.bin` | `0xE000` |

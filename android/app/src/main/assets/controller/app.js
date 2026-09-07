@@ -44,6 +44,8 @@ const pilotFeed = $("pilotFeed");
 const cameraFeed = $("cameraFeed");
 let state = { ...defaultState };
 let socket = null;
+let pilotToken = 0;
+let actuatorSequence = 0;
 let sequence = 0;
 let reconnectTimer = 0;
 let pollTimer = 0;
@@ -237,6 +239,46 @@ function send(type, payload = {}, log = true) {
         addLog("control", type.replace(/_/g, " "), JSON.stringify(payload));
     return seq;
 }
+function sendActuator(type, payload, log = false) {
+    if (isSimulator) {
+        send(type, payload, log);
+        return;
+    }
+    if (!pilotToken || socket?.readyState !== WebSocket.OPEN) {
+        if (log)
+            showToast("Claim pilot control first", true);
+        return;
+    }
+    const params = new URLSearchParams({ token: String(pilotToken), seq: String(++actuatorSequence) });
+    if (type === "motors") {
+        params.set("left", String(payload.left));
+        params.set("right", String(payload.right));
+        params.set("limit", String(payload.limit));
+    }
+    else if (type === "ballast_angle") {
+        params.set("frontDeg", String(payload.frontDeg));
+        params.set("rearDeg", String(payload.rearDeg));
+    }
+    else {
+        params.set("light", String(payload.value));
+    }
+    sentCommands++;
+    if (log)
+        addLog("control", type.replace(/_/g, " "), JSON.stringify(payload));
+    void fetch(`${httpBase}/set?${params}`, { cache: "no-store" })
+        .then(async (response) => {
+        if (!response.ok)
+            throw new Error((await response.text()) || `HTTP ${response.status}`);
+        const message = await response.json();
+        if (message.state)
+            applyState(message.state);
+    })
+        .catch((error) => {
+        missedCommands++;
+        if (log)
+            showToast(error.message || "Control command failed", true);
+    });
+}
 function connect() {
     window.clearTimeout(reconnectTimer);
     if (socket && socket.readyState < WebSocket.CLOSING)
@@ -269,6 +311,7 @@ function connect() {
         if (socket !== current)
             return;
         setConnected(false);
+        pilotToken = 0;
         setLinkStatus("Reconnecting", "connecting");
         addConnection("Control link disconnected", false);
         addLog("error", "Control link disconnected", "Automatic reconnect scheduled");
@@ -288,6 +331,8 @@ function handleMessage(text) {
         return;
     }
     if (message.type === "ack") {
+        if (typeof message.pilotToken === "number")
+            pilotToken = message.pilotToken;
         if (typeof message.rtt === "number")
             latencyMs = Math.round(message.rtt);
         if (message.ok === false) {
@@ -315,6 +360,8 @@ function applyState(incoming) {
         incoming.rearBallastDeg = Math.round((1 - incoming.rearBallast) * 180);
     const cameraReadinessChanged = typeof incoming.cameraReady === "boolean" && incoming.cameraReady !== state.cameraReady;
     state = { ...state, ...incoming };
+    if (incoming.pilot === false)
+        pilotToken = 0;
     if (cameraReadinessChanged)
         refreshActiveCameraStream();
     if ((!state.armed || state.failsafe) && (motorInput.left !== 0 || motorInput.right !== 0))
@@ -390,7 +437,7 @@ function sendMotorCommand(log = false) {
     if (!state.armed)
         return;
     const limit = Number($("throttleLimit").value) / 100;
-    send("motors", { left: motorInput.left, right: motorInput.right, limit }, log);
+    sendActuator("motors", { left: motorInput.left, right: motorInput.right, limit }, log);
 }
 function queueMotorCommand() {
     renderMotorInputs();
@@ -418,7 +465,7 @@ function neutralizeMotors(sendStop = true, log = false) {
     motorInput = { left: 0, right: 0 };
     renderMotorInputs();
     if (sendStop && state.armed)
-        send("motors", { left: 0, right: 0, limit: 1 }, log);
+        sendActuator("motors", { left: 0, right: 0, limit: 1 }, log);
 }
 function signedDegrees(value) {
     return `${value > 0 ? "+" : ""}${value}°`;
@@ -445,7 +492,7 @@ function renderBallastControls() {
 }
 function sendBallastCommand(mode = "", log = false) {
     const { front, rear } = currentBallastAngles();
-    send("ballast_angle", { frontDeg: front, rearDeg: rear, ...(mode ? { mode } : {}) }, log);
+    sendActuator("ballast_angle", { frontDeg: front, rearDeg: rear, ...(mode ? { mode } : {}) }, log);
 }
 function queueBallastCommand() {
     renderBallastControls();
@@ -479,7 +526,7 @@ function setLight(value) {
     });
     $("pilotLightOutput").textContent = `${safe}%`;
     $("cameraLightOutput").textContent = `${safe}%`;
-    send("light", { value: safe / 100 }, false);
+    sendActuator("light", { value: safe / 100 }, false);
 }
 function renderLogs() {
     const rows = $("logRows");
@@ -591,8 +638,10 @@ function exportLogs() {
 }
 function calibrationPayload() {
     const values = ["escMin", "escNeutral", "escMax", "frontSurface", "frontDive", "rearSurface", "rearDive"].map((id) => Number($(id).value));
-    if (!values.every(validPulse) || !(values[0] < values[1] && values[1] < values[2])) {
-        showToast("Use valid 800–2200 µs pulses with min < neutral < max", true);
+    const escValid = values.slice(0, 3).every(validPulse) && values[0] < values[1] && values[1] < values[2];
+    const servoValid = values.slice(3).every((value) => Number.isInteger(value) && value >= 500 && value <= 2500);
+    if (!escValid || !servoValid) {
+        showToast("Use ESC 800–2200 µs and servo 500–2500 µs values", true);
         return null;
     }
     return {

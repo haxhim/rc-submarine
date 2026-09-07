@@ -10,6 +10,7 @@ All state stays on the ESP32 or controlling device. There is no cloud service.
 | GET | `/api/status` | Current public state JSON |
 | GET | `/capture` | One OV2640 JPEG |
 | GET | `/stream` | Redirect to MJPEG stream on port 81 |
+| GET | `/set` | Token-protected lightweight motor, ballast, and light command |
 | WS | `/ws` | Versioned control and acknowledgements |
 
 ## WebSocket packet shape
@@ -27,6 +28,8 @@ The controller responds with the same sequence and a state snapshot:
 ```
 
 Validation failures set `ok:false` and include a human-readable `message`. Clients must not treat a sent command as applied until an acknowledgement arrives.
+
+When a client successfully claims pilot control, its acknowledgement contains a random `pilotToken`. The Android app sends live actuator values through `/set?token=...` using `left`, `right`, `limit`, `frontDeg`, `rearDeg`, or `light`. The ESP rejects missing or incorrect tokens, so another device on the access point cannot reuse the active pilot's HTTP control path. Arming, ownership and heartbeat remain on `/ws`.
 
 ## Commands
 

@@ -5,5 +5,5 @@ const root = resolve(import.meta.dirname, "..");
 const source = resolve(root, "android/app/build/outputs/apk/debug/app-debug.apk");
 const releases = resolve(root, "releases");
 await mkdir(releases, { recursive: true });
-await copyFile(source, resolve(releases, "SubmarineRC-v1.2.1.apk"));
-console.log("Created releases/SubmarineRC-v1.2.1.apk");
+await copyFile(source, resolve(releases, "SubmarineRC-v1.3.0.apk"));
+console.log("Created releases/SubmarineRC-v1.3.0.apk");

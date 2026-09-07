@@ -6,8 +6,8 @@
 | --- | ---: | --- |
 | Front ballast servo signal | 12 | Boot strap pin; fit the recommended pulldown and verify boot before attaching linkage |
 | Rear ballast servo signal | 13 | PWM signal only |
-| Left bidirectional ESC signal | 14 | Chosen instead of GPIO16 so PSRAM remains available |
-| Right bidirectional ESC signal | 15 | Boot strap pin; fit the recommended pulldown |
+| Left bidirectional ESC signal | 15 | Bench-confirmed mapping; boot strap pin, fit the recommended pulldown |
+| Right bidirectional ESC signal | 14 | Bench-confirmed mapping; chosen instead of GPIO16 so PSRAM remains available |
 | Onboard flash LED | 4 | PWM brightness; microSD cannot be used |
 
 The OV2640 uses GPIO0, 5, 18, 19, 21–23, 25–27, 32, 34–36, and 39 exactly as defined in `esp-materials/include/pins.h`. GPIO16 and GPIO17 are tied to ESP32-CAM PSRAM and must remain unavailable.
