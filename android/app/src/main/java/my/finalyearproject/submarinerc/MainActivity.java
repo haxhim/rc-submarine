@@ -12,8 +12,6 @@ import android.os.Environment;
 import android.provider.MediaStore;
 import android.provider.Settings;
 import android.util.Base64;
-import android.view.Gravity;
-import android.view.View;
 import android.webkit.DownloadListener;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
@@ -21,20 +19,22 @@ import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Button;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 
 public class MainActivity extends Activity {
-    private static final String HOME_URL = "http://192.168.4.1/";
+    private static final String HOME_URL = "https://appassets.androidplatform.net/controller/index.html";
+    private static final String ASSET_HOST = "appassets.androidplatform.net";
+    private static final String ASSET_PREFIX = "/controller/";
     private static final String ALLOWED_HOST = "192.168.4.1";
     private WebView webView;
     private ValueCallback<Uri[]> fileChooserCallback;
@@ -55,8 +55,8 @@ public class MainActivity extends Activity {
         settings.setDatabaseEnabled(false);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(true);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setMediaPlaybackRequiresUserGesture(false);
         webView.setBackgroundColor(Color.rgb(8, 16, 24));
         webView.addJavascriptInterface(new AndroidBridge(), "SubmarineAndroid");
@@ -85,10 +85,35 @@ public class MainActivity extends Activity {
         return "http".equalsIgnoreCase(uri.getScheme()) && ALLOWED_HOST.equals(uri.getHost()) && (uri.getPort() == -1 || uri.getPort() == 80 || uri.getPort() == 81);
     }
 
+    private boolean isBundledController(Uri uri) {
+        return "https".equalsIgnoreCase(uri.getScheme()) && ASSET_HOST.equals(uri.getHost()) && uri.getPath() != null && uri.getPath().startsWith(ASSET_PREFIX);
+    }
+
+    private String assetMimeType(String path) {
+        if (path.endsWith(".html")) return "text/html";
+        if (path.endsWith(".js")) return "text/javascript";
+        if (path.endsWith(".css")) return "text/css";
+        if (path.endsWith(".json") || path.endsWith(".map")) return "application/json";
+        return "application/octet-stream";
+    }
+
     private final class RestrictedClient extends WebViewClient {
+        @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+            Uri uri = request.getUrl();
+            if (!isBundledController(uri)) return super.shouldInterceptRequest(view, request);
+            String path = uri.getPath();
+            if (path == null || path.contains("..")) return null;
+            try {
+                InputStream input = getAssets().open(path.substring(1));
+                return new WebResourceResponse(assetMimeType(path), "UTF-8", input);
+            } catch (IOException error) {
+                return null;
+            }
+        }
+
         @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             Uri uri = request.getUrl();
-            if (isAllowed(uri)) return false;
+            if (isAllowed(uri) || isBundledController(uri)) return false;
             if ("https".equalsIgnoreCase(uri.getScheme())) {
                 try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); } catch (ActivityNotFoundException ignored) { }
             }
@@ -97,42 +122,8 @@ public class MainActivity extends Activity {
         }
 
         @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-            if (request.isForMainFrame()) showOffline();
+            if (request.isForMainFrame()) Toast.makeText(MainActivity.this, "Controller UI could not be loaded", Toast.LENGTH_LONG).show();
         }
-    }
-
-    private void showOffline() {
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setGravity(Gravity.CENTER);
-        panel.setPadding(52, 52, 52, 52);
-        panel.setBackgroundColor(Color.rgb(8, 16, 24));
-
-        TextView title = new TextView(this);
-        title.setText("Submarine controller offline");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(24);
-        title.setGravity(Gravity.CENTER);
-
-        TextView help = new TextView(this);
-        help.setText("1. Power the ESP32-CAM\n2. Join Wi-Fi SUB-RC-<device-id>\n3. Use password NautilusRC!\n4. Return here and tap Retry");
-        help.setTextColor(Color.rgb(181, 198, 210));
-        help.setTextSize(16);
-        help.setGravity(Gravity.CENTER);
-        help.setPadding(0, 30, 0, 30);
-
-        Button wifi = new Button(this);
-        wifi.setText("Open Wi-Fi settings");
-        wifi.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS)));
-        Button retry = new Button(this);
-        retry.setText("Retry controller");
-        retry.setOnClickListener(v -> showController());
-
-        panel.addView(title);
-        panel.addView(help);
-        panel.addView(wifi);
-        panel.addView(retry);
-        setContentView(panel);
     }
 
     @Override public void onBackPressed() {
@@ -148,6 +139,10 @@ public class MainActivity extends Activity {
     }
 
     public final class AndroidBridge {
+        @JavascriptInterface public void openWifiSettings() {
+            runOnUiThread(() -> startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS)));
+        }
+
         @JavascriptInterface public void saveBase64(String requestedName, String mimeType, String base64Data) {
             runOnUiThread(() -> {
                 try {

@@ -19,8 +19,9 @@ const calibration = {
 
 const state = {
   calibrated: true, armed: false, failsafe: false,
-  rssi: -48, uptimeMs: 0, clients: 0, firmware: "simulator-1.0.0",
+  rssi: -48, uptimeMs: 0, clients: 0, firmware: "simulator-1.2.0",
   light: 0, frontBallast: 0, rearBallast: 0,
+  frontBallastDeg: 180, rearBallastDeg: 180,
   frameSize: "VGA", jpegQuality: 12, failsafeMs: 1000,
   streamFps: 6.25,
   leftMotor: 0, rightMotor: 0,
@@ -48,6 +49,8 @@ function publicState(forSocket = null) {
     uptimeMs: state.uptimeMs, clients: wss.clients.size,
     firmware: state.firmware, light: state.light,
     frontBallast: state.frontBallast, rearBallast: state.rearBallast,
+    frontBallastDeg: state.frontBallastDeg, rearBallastDeg: state.rearBallastDeg,
+    leftMotor: state.leftMotor, rightMotor: state.rightMotor,
     frameSize: state.frameSize, jpegQuality: state.jpegQuality, streamFps: state.streamFps,
     calibration: state.calibrated ? { ...calibration } : undefined,
   };
@@ -122,6 +125,14 @@ function requiresPilot(socket, request) {
   return true;
 }
 const finiteUnit = (value) => Number.isFinite(value) && value >= -1 && value <= 1;
+const validAngle = (value) => Number.isInteger(value) && value >= 0 && value <= 180;
+
+function surfaceVehicle() {
+  state.armed = false;
+  state.leftMotor = state.rightMotor = 0;
+  state.frontBallast = state.rearBallast = 0;
+  state.frontBallastDeg = state.rearBallastDeg = 180;
+}
 
 function handleCommand(socket, raw) {
   let request;
@@ -136,7 +147,7 @@ function handleCommand(socket, raw) {
       broadcastEvent("pilot_claimed", "Control granted to this client");
       return ack(socket, request, true, "Pilot control granted");
     case "release":
-      if (pilot === socket) { state.armed = false; state.leftMotor = state.rightMotor = 0; pilot = null; broadcastEvent("pilot_released", "Propulsion disarmed"); }
+      if (pilot === socket) { surfaceVehicle(); pilot = null; broadcastEvent("pilot_released", "Propulsion neutral; ballast moved to 180 degree surface position"); }
       return ack(socket, request, true, "Pilot control released");
     case "arm":
       if (!requiresPilot(socket, request)) return;
@@ -152,12 +163,30 @@ function handleCommand(socket, raw) {
       state.rightMotor = Math.max(-1, Math.min(1, surge - yaw)) * limit;
       return ack(socket, request);
     }
+    case "motors": {
+      if (!requiresPilot(socket, request)) return;
+      if (!state.armed) return reject(socket, request, "Propulsion is disarmed");
+      const left = Number(request.left), right = Number(request.right), limit = Number(request.limit);
+      if (!finiteUnit(left) || !finiteUnit(right) || !Number.isFinite(limit) || limit < 0 || limit > 1) return reject(socket, request, "Motor values must be normalized");
+      state.leftMotor = left * limit;
+      state.rightMotor = right * limit;
+      return ack(socket, request);
+    }
     case "ballast":
       if (!requiresPilot(socket, request)) return;
       if (!state.calibrated) return reject(socket, request, "Calibration is required");
       if (![request.front, request.rear].every((v) => Number.isFinite(v) && v >= 0 && v <= 1)) return reject(socket, request, "Ballast values must be between 0 and 1");
       state.frontBallast = Number(request.front); state.rearBallast = Number(request.rear);
+      state.frontBallastDeg = Math.round((1 - state.frontBallast) * 180);
+      state.rearBallastDeg = Math.round((1 - state.rearBallast) * 180);
       return ack(socket, request, true, request.mode === "surface" ? "Ballast moving to surface" : request.mode === "dive" ? "Ballast moving to dive" : "");
+    case "ballast_angle":
+      if (!requiresPilot(socket, request)) return;
+      if (!state.calibrated) return reject(socket, request, "Calibration is required");
+      if (!validAngle(request.frontDeg) || !validAngle(request.rearDeg)) return reject(socket, request, "Ballast angles must be whole degrees from 0 to 180");
+      state.frontBallastDeg = request.frontDeg; state.rearBallastDeg = request.rearDeg;
+      state.frontBallast = 1 - request.frontDeg / 180; state.rearBallast = 1 - request.rearDeg / 180;
+      return ack(socket, request, true, request.mode === "surface" ? "Ballast moving to 180 degree surface position" : request.mode === "dive" ? "Ballast moving to 0 degree dive position" : "");
     case "light":
       if (!requiresPilot(socket, request)) return;
       if (!Number.isFinite(request.value) || request.value < 0 || request.value > 1) return reject(socket, request, "Light value must be between 0 and 1");
@@ -171,7 +200,7 @@ function handleCommand(socket, raw) {
       if (!requiresPilot(socket, request)) return;
       const pulseKeys = ["escMin", "escNeutral", "escMax", "frontSurface", "frontDive", "rearSurface", "rearDive"];
       if (request.benchConfirmed !== true || !pulseKeys.every((key) => Number.isInteger(request[key]) && request[key] >= 800 && request[key] <= 2200) || !(request.escMin < request.escNeutral && request.escNeutral < request.escMax)) return reject(socket, request, "Invalid or unsafe calibration values");
-      Object.assign(calibration, request); state.calibrated = true; state.armed = false; state.frontBallast = state.rearBallast = 0;
+      Object.assign(calibration, request); state.calibrated = true; surfaceVehicle();
       return ack(socket, request, true, "Calibration saved; propulsion remains disarmed");
     }
     case "config":
@@ -191,14 +220,13 @@ function handleCommand(socket, raw) {
         if (!pulseKeys.every((key) => Number.isInteger(imported[key]) && imported[key] >= 800 && imported[key] <= 2200) || !(imported.escMin < imported.escNeutral && imported.escNeutral < imported.escMax)) return reject(socket, request, "Imported calibration is invalid");
         Object.assign(calibration, imported);
         state.calibrated = true;
-        state.armed = false;
-        state.frontBallast = state.rearBallast = 0;
+        surfaceVehicle();
       }
       return ack(socket, request, true, "Configuration imported");
     case "emergency_surface":
       if (!requiresPilot(socket, request)) return;
-      state.armed = false; state.leftMotor = state.rightMotor = 0; state.frontBallast = state.rearBallast = 0; state.failsafe = false;
-      broadcastEvent("emergency_surface", "Propulsion neutral; both ballast tanks commanded empty", "error");
+      surfaceVehicle(); state.failsafe = false;
+      broadcastEvent("emergency_surface", "Propulsion neutral; both ballast servos commanded to 180 degree surface position", "error");
       return ack(socket, request, true, "Emergency surface activated");
     default: return reject(socket, request, "Unknown command type");
   }
@@ -210,8 +238,8 @@ wss.on("connection", (socket) => {
   socket.on("message", (data) => handleCommand(socket, data));
   socket.on("close", () => {
     if (pilot === socket) {
-      state.armed = false; state.leftMotor = state.rightMotor = 0; state.frontBallast = state.rearBallast = 0; state.failsafe = true; pilot = null;
-      broadcastEvent("failsafe", "Pilot disconnected; outputs neutral and ballast surface", "error");
+      surfaceVehicle(); state.failsafe = true; pilot = null;
+      broadcastEvent("failsafe", "Pilot disconnected; outputs neutral and ballast moved to 180 degrees", "error");
     }
     state.clients = wss.clients.size;
   });
@@ -225,8 +253,8 @@ server.on("upgrade", (req, socket, head) => {
 
 setInterval(() => {
   if (pilot && Date.now() - lastPilotHeartbeat > state.failsafeMs) {
-    state.armed = false; state.leftMotor = state.rightMotor = 0; state.frontBallast = state.rearBallast = 0; state.failsafe = true; pilot = null;
-    broadcastEvent("failsafe", "Heartbeat timeout; outputs neutral and ballast surface", "error");
+    surfaceVehicle(); state.failsafe = true; pilot = null;
+    broadcastEvent("failsafe", "Heartbeat timeout; outputs neutral and ballast moved to 180 degrees", "error");
   }
 }, 100);
 

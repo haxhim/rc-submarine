@@ -19,14 +19,17 @@ Keep both propellers removed until the final propeller-specific checks.
 - [ ] A second browser is monitor-only while the first owns pilot control.
 - [ ] Propulsion cannot arm before calibration.
 - [ ] Boot, disarm, disconnect, and pilot release all leave ESCs neutral.
-- [ ] Heartbeat loss neutralizes both ESCs and commands both ballast servos to surface within the selected timeout.
+- [ ] Each left/right ESC slider returns to neutral when released, cancelled, or the app loses focus.
+- [ ] Equal left/right forward and reverse commands run straight; unequal commands steer in the expected direction.
+- [ ] Heartbeat loss neutralizes both ESCs and commands both ballast servos to `180°` surface within the selected timeout.
 - [ ] Invalid/out-of-range protocol packets are rejected without moving outputs.
 - [ ] Configuration survives a full power cycle.
 
 ## Mechanical
 
 - [ ] Front and rear syringe endpoints do not bottom out, bind, or stall the servos.
-- [ ] Emergency Surface empties both ballast tanks and disarms propulsion.
+- [ ] The master ballast slider maps `0°` to dive and `180°` to surface; front/rear trims clamp to the safe range.
+- [ ] Emergency Surface commands both servos to `180°` and disarms propulsion.
 - [ ] With propellers finally installed in a protected test fixture, motor direction matches the UI and inversion settings.
 - [ ] Measured full-load current is within battery, fuse, connectors, wire, ESC, and motor ratings.
 

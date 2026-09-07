@@ -15,10 +15,12 @@
 - Improve 5 V regulation, bulk capacitance, star grounding, and separation from ESC/motor wiring.
 - Reduce resolution to QVGA or JPEG quality number upward (larger numbers use more compression).
 
-## Wi-Fi appears but the page does not load
+## App opens but submarine remains offline
 
 - Stay connected when Android reports “no internet”.
-- Browse explicitly to `http://192.168.4.1`, not HTTPS.
+- The complete UI should remain visible because it is bundled in the APK. If the screen is blank, confirm you installed version 1.2.0 or newer.
+- Confirm the status badge changes from Offline/Reconnecting to Link online after joining `SUB-RC-<device-id>`.
+- Browse to `http://192.168.4.1` only when checking the ESP diagnostic page; the app itself does not load its UI from that address.
 - Try one controlling device and disconnect extra clients.
 - Reset the ESP32, wait for the serial ready message, and reload.
 
@@ -42,5 +44,4 @@ Stop testing. Verify the buck regulator is sized for ESP32 and simultaneous serv
 - Enable installation from the app/file manager used to open the APK.
 - Remove an older build with a different signing key if Android reports a signature mismatch.
 - Android 7.0 or newer is required.
-- Use `adb install -r releases/SubmarineRC-v1.0.0.apk` for detailed errors.
-
+- Use `adb install -r releases/SubmarineRC-v1.2.0.apk` for detailed errors.

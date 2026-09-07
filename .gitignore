@@ -1,8 +1,12 @@
 node_modules/
+.DS_Store
+.playwright-cli/
+output/
 web/dist/
 esp-materials/data/
 esp-materials/.pio/
 android/.gradle/
+android/build/
 android/local.properties
 android/app/build/
 releases/*.apk

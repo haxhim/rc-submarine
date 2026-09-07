@@ -19,12 +19,12 @@ cd "$ESP_DIR"
 
 cp "$BUILD_DIR/firmware.bin" "$RELEASE_DIR/esp-code.bin"
 cp "$BUILD_DIR/partitions.bin" "$RELEASE_DIR/partitions.bin"
-cp "$BUILD_DIR/littlefs.bin" "$RELEASE_DIR/littlefs-ui.bin"
+cp "$BUILD_DIR/littlefs.bin" "$RELEASE_DIR/littlefs-diagnostics.bin"
 cp "$BUILD_DIR/bootloader.bin" "$RELEASE_DIR/bootloader.bin"
 cp "$BOOT_APP0" "$RELEASE_DIR/boot_app0.bin"
 
 ESPTOOL="$PIO_CORE/packages/tool-esptoolpy/esptool.py"
-"$PYTHON_BIN" "$ESPTOOL" --chip esp32 merge_bin -o "$RELEASE_DIR/SubmarineRC-ESP-v1.0.0.bin" \
+"$PYTHON_BIN" "$ESPTOOL" --chip esp32 merge_bin -o "$RELEASE_DIR/SubmarineRC-ESP-v1.2.0.bin" \
   0x1000 "$BUILD_DIR/bootloader.bin" \
   0x8000 "$BUILD_DIR/partitions.bin" \
   0xe000 "$BOOT_APP0" \

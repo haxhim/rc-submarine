@@ -6,11 +6,11 @@ This folder contains everything needed for the AI-Thinker ESP32-CAM installed in
 
 - `src/main.cpp` — submarine control, Wi-Fi, camera, WebSocket, calibration and failsafe code
 - `include/pins.h` — exact OV2640, ESC, ballast-servo and light pins
-- `include/control_math.h` — differential motor mixing and safe PWM conversion
-- `data/` — the controller interface stored inside the ESP with LittleFS
+- `include/control_math.h` — direct/legacy motor control, ballast-angle mapping and safe PWM conversion
+- `data/` — a tiny LittleFS diagnostic page; the full controller UI lives in the APK
 - `platformio.ini` — AI-Thinker ESP32-CAM build configuration
 - `partitions.csv` — 4 MB flash layout
-- `../releases/esp-materials/SubmarineRC-ESP-v1.0.0.bin` — easiest complete image to flash
+- `../releases/esp-materials/SubmarineRC-ESP-v1.2.0.bin` — easiest complete image to flash
 
 Target hardware:
 
@@ -43,7 +43,7 @@ TX and RX are crossed: adapter TX goes to ESP RX (`U0R`), and adapter RX goes to
 
 ## Method 1: flash the ready-made ESP image
 
-The simplest option is `releases/esp-materials/SubmarineRC-ESP-v1.0.0.bin`.
+The simplest option is `releases/esp-materials/SubmarineRC-ESP-v1.2.0.bin`.
 
 ### 1. Install the flashing tool
 
@@ -83,20 +83,20 @@ macOS:
 
 ```bash
 python3 -m esptool --chip esp32 --port /dev/cu.usbserial-XXXX --baud 460800 \
-  write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.0.0.bin
+  write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.2.0.bin
 ```
 
 Windows:
 
 ```powershell
-py -m esptool --chip esp32 --port COM5 --baud 460800 write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.0.0.bin
+py -m esptool --chip esp32 --port COM5 --baud 460800 write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.2.0.bin
 ```
 
 Linux:
 
 ```bash
 python3 -m esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 \
-  write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.0.0.bin
+  write_flash -z 0x0 releases/esp-materials/SubmarineRC-ESP-v1.2.0.bin
 ```
 
 Wait for esptool to report successful verification. If connection is unreliable, repeat download mode and reduce `--baud 460800` to `--baud 115200`.
@@ -131,7 +131,7 @@ npm install
 ./scripts/build-esp-materials.sh
 ```
 
-This builds the controller, copies it into `esp-materials/data`, compiles the ESP code, creates the LittleFS interface image, and recreates everything in `releases/esp-materials`.
+This bundles the full controller into the Android assets, copies only the lightweight diagnostic page into `esp-materials/data`, compiles the ESP code, creates the LittleFS diagnostics image, and recreates everything in `releases/esp-materials`.
 
 You can also compile and upload directly:
 
@@ -151,7 +151,7 @@ Use the complete image at `0x0` whenever possible. Advanced individual-image fla
 | `partitions.bin` | `0x8000` |
 | `boot_app0.bin` | `0xE000` |
 | `esp-code.bin` | `0x10000` |
-| `littlefs-ui.bin` | `0x210000` |
+| `littlefs-diagnostics.bin` | `0x210000` |
 
 ```bash
 python3 -m esptool --chip esp32 --port /dev/cu.usbserial-XXXX --baud 460800 write_flash -z \
@@ -159,7 +159,7 @@ python3 -m esptool --chip esp32 --port /dev/cu.usbserial-XXXX --baud 460800 writ
   0x8000 releases/esp-materials/partitions.bin \
   0xE000 releases/esp-materials/boot_app0.bin \
   0x10000 releases/esp-materials/esp-code.bin \
-  0x210000 releases/esp-materials/littlefs-ui.bin
+  0x210000 releases/esp-materials/littlefs-diagnostics.bin
 ```
 
 ## First connection and calibration
@@ -173,6 +173,8 @@ python3 -m esptool --chip esp32 --port /dev/cu.usbserial-XXXX --baud 460800 writ
 
 The ESP will not arm propulsion until calibration is valid. A lost pilot heartbeat neutralizes both ESCs and commands both calibrated ballast servos to surface.
 
+On the Pilot page, the left and right ESCs have separate forward/neutral/reverse sliders. The sliders automatically return to neutral when released. Ballast uses degrees: `0°` commands the calibrated dive endpoint and `180°` commands the calibrated surface endpoint. There is no separate pump output in version 1.2.
+
 ## Common flashing problems
 
 - **Failed to connect:** confirm GPIO0 is connected to GND, press reset immediately before esptool, and verify TX/RX are crossed.
@@ -180,4 +182,4 @@ The ESP will not arm propulsion until calibration is valid. A lost pilot heartbe
 - **Brownout or camera restart:** use a stronger regulated 5 V supply with short wires and bulk capacitance.
 - **No serial port:** install the adapter’s CP210x, CH340, or FTDI driver and use a data-capable USB cable.
 - **Permission denied on Linux:** add the user to the serial-port group such as `dialout`, then sign out and back in.
-- **Page missing after individual flashing:** flash `littlefs-ui.bin` at `0x210000`, or use the complete image at `0x0`.
+- **Diagnostic page missing after individual flashing:** flash `littlefs-diagnostics.bin` at `0x210000`, or use the complete image at `0x0`. The Android controller UI is bundled in the APK and does not depend on this page.

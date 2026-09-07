@@ -16,11 +16,13 @@ Start with minimum 1100 µs, neutral 1500 µs, and maximum 1900 µs. These are c
 
 Save calibration while propulsion remains disarmed. Arm briefly at a low throttle limit and confirm each motor responds in the expected direction. Use left/right inversion for software correction. If an ESC requires a special endpoint programming sequence, follow its manual with propellers removed; the application does not automatically guess that sequence.
 
+The Pilot page provides separate left and right sliders. Both are neutral at the centre, forward above centre and reverse below centre. Each slider automatically returns to neutral when released. Equal values move straight; reducing the left output turns left and reducing the right output turns right.
+
 ## Ballast endpoints
 
 Use small adjustments. Determine the front surface/empty and dive/full pulse values without letting the syringe bottom out, the linkage bind, or the servo remain stalled. Repeat for the rear tank. Typical hobby-servo pulses fall within 1000–2000 µs, but the software accepts only the broader safety envelope of 800–2200 µs.
 
-After saving, use Surface and Dive while observing current draw and mechanical travel. Stop immediately if a servo chatters, stalls, overheats, or pushes the syringe against its hard stop. Reverse a servo with its inversion checkbox instead of crossing the endpoint meaning.
+After saving, use the angle controls while observing current draw and mechanical travel. `0°` is the calibrated dive position, `90°` is midpoint and `180°` is the calibrated surface position. The master slider moves both servos; front/rear trims add up to ±30° and clamp safely within 0–180°. Stop immediately if a servo chatters, stalls, overheats, or pushes the syringe against its hard stop. Reverse a servo with its inversion checkbox instead of crossing the endpoint meaning.
 
 ## Failsafe check
 
@@ -29,8 +31,7 @@ With propellers still removed:
 1. Claim control and arm.
 2. Apply a small drive command.
 3. Close the browser/app or disable phone Wi-Fi.
-4. Within the configured timeout (default 1 second), both ESCs must return to neutral and both ballast tanks must command their surface/empty endpoints.
+4. Within the configured timeout (default 1 second), both ESCs must return to neutral and both ballast servos must command `180°` surface.
 5. Reconnect. The controller must show disarmed/failsafe and require a new pilot claim.
 
 Do not install propellers until every item in `BENCH_TEST.md` passes.
-

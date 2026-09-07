@@ -1,8 +1,11 @@
-import { clamp, mixDrive, PROTOCOL_VERSION, safeJson, validPulse } from "./control.js";
+import { clamp, directMotorLevels, effectiveBallastAngles, PROTOCOL_VERSION, safeJson, validPulse } from "./control.js";
 
 declare global {
   interface Window {
-    SubmarineAndroid?: { saveBase64(name: string, mime: string, data: string): void };
+    SubmarineAndroid?: {
+      saveBase64(name: string, mime: string, data: string): void;
+      openWifiSettings(): void;
+    };
   }
 }
 
@@ -26,6 +29,10 @@ type DeviceState = {
   light: number;
   frontBallast: number;
   rearBallast: number;
+  frontBallastDeg: number;
+  rearBallastDeg: number;
+  leftMotor: number;
+  rightMotor: number;
   frameSize: string;
   jpegQuality: number;
   streamFps: number;
@@ -58,6 +65,10 @@ const defaultState: DeviceState = {
   light: 0,
   frontBallast: 0,
   rearBallast: 0,
+  frontBallastDeg: 180,
+  rearBallastDeg: 180,
+  leftMotor: 0,
+  rightMotor: 0,
   frameSize: "VGA",
   jpegQuality: 12,
   streamFps: 0,
@@ -69,8 +80,6 @@ const toast = $("toast");
 const linkBadge = $("linkBadge");
 const roleBadge = $("roleBadge");
 const stateBanner = $("stateBanner");
-const joystick = $("joystick");
-const joystickKnob = $("joystickKnob");
 const emergencyDialog = $("emergencyDialog") as HTMLDialogElement;
 const pilotFeed = $("pilotFeed") as HTMLImageElement;
 const cameraFeed = $("cameraFeed") as HTMLImageElement;
@@ -81,8 +90,9 @@ let sequence = 0;
 let reconnectTimer = 0;
 let pollTimer = 0;
 let heartbeatTimer = 0;
-let joystickSendTimer = 0;
-let currentVector = { x: 0, y: 0 };
+let motorSendTimer = 0;
+let ballastSendTimer = 0;
+let motorInput = { left: 0, right: 0 };
 let sentCommands = 0;
 let missedCommands = 0;
 let latencyMs = 0;
@@ -94,6 +104,8 @@ let mediaRecorder: MediaRecorder | null = null;
 let recordTimer = 0;
 let recordingChunks: Blob[] = [];
 let calibrationLoaded = false;
+let ballastUiInitialized = false;
+let connectionAttempts = 0;
 
 const isSimulator = ["localhost", "127.0.0.1"].includes(location.hostname);
 const httpBase = isSimulator ? `${location.protocol}//${location.host}` : "http://192.168.4.1";
@@ -132,6 +144,7 @@ function addConnection(label: string, good: boolean): void {
 }
 
 function showView(name: ViewName): void {
+  if (name !== "pilot") neutralizeMotors();
   document.querySelectorAll<HTMLElement>(".view").forEach((view) => view.classList.toggle("active", view.dataset.view === name));
   document.querySelectorAll<HTMLButtonElement>("[data-view-target]").forEach((button) => {
     const active = button.dataset.viewTarget === name;
@@ -143,12 +156,20 @@ function showView(name: ViewName): void {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+function setLinkStatus(label: string, phase: "online" | "offline" | "connecting"): void {
+  linkBadge.classList.toggle("offline", phase === "offline");
+  linkBadge.classList.toggle("connecting", phase === "connecting");
+  linkBadge.querySelector("span")!.textContent = label;
+  linkBadge.setAttribute("aria-label", `Submarine connection: ${label}`);
+}
+
 function setConnected(connected: boolean): void {
-  linkBadge.classList.toggle("offline", !connected);
-  linkBadge.querySelector("span")!.textContent = connected ? "Link online" : "Offline";
+  setLinkStatus(connected ? "Link online" : "Offline", connected ? "online" : "offline");
   $("footerDot").style.background = connected ? "var(--green)" : "var(--red)";
   $("footerStatus").textContent = connected ? "Telemetry link active" : "Not connected";
   if (!connected) {
+    neutralizeMotors(false);
+    ballastUiInitialized = false;
     state.armed = false;
     state.pilot = false;
     updateStateUI();
@@ -164,9 +185,11 @@ function updateStateUI(): void {
   armButton.textContent = state.armed ? "Disarm propulsion" : "Arm propulsion";
   armButton.classList.toggle("danger", state.armed);
   armButton.disabled = !connected || !state.pilot || !state.calibrated;
-  joystick.classList.toggle("disabled", !state.armed);
+  const motorEnabled = Boolean(connected && state.pilot && state.armed);
+  ["leftThrottle", "rightThrottle", "stopMotors"].forEach((id) => ($(id) as HTMLInputElement | HTMLButtonElement).disabled = !motorEnabled);
+  if (!motorEnabled && (motorInput.left !== 0 || motorInput.right !== 0)) neutralizeMotors(false);
   const ballastEnabled = connected && state.pilot && state.calibrated;
-  ["frontBallast", "rearBallast", "surfaceButton", "diveButton", "emergencyButton"].forEach((id) => ($(id) as HTMLInputElement | HTMLButtonElement).disabled = !ballastEnabled);
+  ["masterBallast", "frontTrim", "rearTrim", "surfaceButton", "diveButton", "emergencyButton"].forEach((id) => ($(id) as HTMLInputElement | HTMLButtonElement).disabled = !ballastEnabled);
   $("calibrationBadge").textContent = state.calibrated ? "Calibrated" : "Required";
   $("calibrationBadge").classList.toggle("warning", !state.calibrated);
   $("controlState").textContent = !connected ? "Disconnected" : state.failsafe ? "Failsafe" : state.armed ? "Armed" : state.pilot ? "Disarmed" : "Monitor only";
@@ -176,18 +199,19 @@ function updateStateUI(): void {
   $("sonarRssi").textContent = state.rssi === null ? "—" : `${state.rssi} dBm`;
   $("latencyMetric").textContent = latencyMs ? `${latencyMs} ms` : "—";
   $("sonarLatency").textContent = latencyMs ? `${latencyMs} ms` : "—";
+  $("feedLatency").textContent = latencyMs ? `${latencyMs} ms` : "— ms";
   const loss = sentCommands ? Math.round((missedCommands / sentCommands) * 100) : 0;
   $("lossMetric").textContent = `${loss}%`;
   $("sonarLoss").textContent = `${loss}%`;
   $("uptimeMetric").textContent = formatDuration(state.uptimeMs);
   $("clientCount").textContent = String(state.clients);
   $("firmwareVersion").textContent = state.firmware;
-  $("frontBallastOutput").textContent = `${Math.round(state.frontBallast * 100)}%`;
-  $("rearBallastOutput").textContent = `${Math.round(state.rearBallast * 100)}%`;
-  ($("frontBallast") as HTMLInputElement).value = String(Math.round(state.frontBallast * 100));
-  ($("rearBallast") as HTMLInputElement).value = String(Math.round(state.rearBallast * 100));
-  setRangeFill($("frontBallast") as HTMLInputElement);
-  setRangeFill($("rearBallast") as HTMLInputElement);
+  $("leftMotor").textContent = describeMotor(state.leftMotor);
+  $("rightMotor").textContent = describeMotor(state.rightMotor);
+  $("frontBallastOutput").textContent = `${Math.round(state.frontBallastDeg)}°`;
+  $("rearBallastOutput").textContent = `${Math.round(state.rearBallastDeg)}°`;
+  const averageBallast = Math.round((state.frontBallastDeg + state.rearBallastDeg) / 2);
+  $("ballastState").textContent = averageBallast === 0 ? "0° Dive" : averageBallast === 180 ? "180° Surface" : `${averageBallast}° Hold`;
   $("feedResolution").textContent = state.frameSize;
   ($("frameSize") as HTMLSelectElement).value = state.frameSize;
   ($("jpegQuality") as HTMLInputElement).value = String(state.jpegQuality);
@@ -198,7 +222,7 @@ function updateStateUI(): void {
   stateBanner.className = "state-banner";
   if (!connected) {
     stateBanner.classList.add("warning");
-    stateBanner.innerHTML = "<strong>Controller unavailable</strong><span>Join SUB-RC Wi-Fi and reconnect to 192.168.4.1.</span>";
+    stateBanner.innerHTML = "<strong>App ready · submarine offline</strong><span>UI remains available. Join SUB-RC Wi-Fi, then tap Reconnect.</span>";
   } else if (!state.calibrated) {
     stateBanner.classList.add("warning");
     stateBanner.innerHTML = "<strong>Calibration required</strong><span>Propulsion remains locked. Open Settings and calibrate on a dry bench.</span>";
@@ -238,33 +262,38 @@ function connect(): void {
   window.clearTimeout(reconnectTimer);
   if (socket && socket.readyState < WebSocket.CLOSING) socket.close();
   setConnected(false);
-  linkBadge.querySelector("span")!.textContent = "Connecting";
+  setLinkStatus(connectionAttempts++ === 0 ? "Connecting" : "Reconnecting", "connecting");
+  let current: WebSocket;
   try {
-    socket = new WebSocket(`${wsBase}/ws`);
+    current = new WebSocket(`${wsBase}/ws`);
+    socket = current;
   } catch {
     scheduleReconnect();
     return;
   }
-  socket.addEventListener("open", () => {
+  current.addEventListener("open", () => {
+    if (socket !== current) return;
     setConnected(true);
     addConnection("Control link connected", true);
     addLog("system", "Control link connected", wsBase);
-    send("hello", { client: "web", protocol: PROTOCOL_VERSION }, false);
+    send("hello", { client: window.SubmarineAndroid ? "android" : "web", protocol: PROTOCOL_VERSION }, false);
     startHeartbeat();
     refreshStatus();
     const stream = `${httpBase}/stream?ts=${Date.now()}`;
     pilotFeed.src = stream;
     cameraFeed.src = stream;
   });
-  socket.addEventListener("message", (event) => handleMessage(String(event.data)));
-  socket.addEventListener("close", () => {
+  current.addEventListener("message", (event) => { if (socket === current) handleMessage(String(event.data)); });
+  current.addEventListener("close", () => {
+    if (socket !== current) return;
     setConnected(false);
+    setLinkStatus("Reconnecting", "connecting");
     addConnection("Control link disconnected", false);
     addLog("error", "Control link disconnected", "Automatic reconnect scheduled");
     stopHeartbeat();
     scheduleReconnect();
   });
-  socket.addEventListener("error", () => socket?.close());
+  current.addEventListener("error", () => current.close());
 }
 
 function scheduleReconnect(): void {
@@ -296,7 +325,15 @@ function handleMessage(text: string): void {
 }
 
 function applyState(incoming: Partial<DeviceState>): void {
+  if (typeof incoming.frontBallastDeg !== "number" && typeof incoming.frontBallast === "number") incoming.frontBallastDeg = Math.round((1 - incoming.frontBallast) * 180);
+  if (typeof incoming.rearBallastDeg !== "number" && typeof incoming.rearBallast === "number") incoming.rearBallastDeg = Math.round((1 - incoming.rearBallast) * 180);
   state = { ...state, ...incoming };
+  if ((!state.armed || state.failsafe) && (motorInput.left !== 0 || motorInput.right !== 0)) neutralizeMotors(false);
+  if (!ballastUiInitialized && typeof state.frontBallastDeg === "number" && typeof state.rearBallastDeg === "number") {
+    const master = Math.round((state.frontBallastDeg + state.rearBallastDeg) / 2);
+    setBallastControls(master, clamp(Math.round(state.frontBallastDeg - master), -30, 30), clamp(Math.round(state.rearBallastDeg - master), -30, 30), false);
+    ballastUiInitialized = true;
+  }
   if (incoming.calibration && !calibrationLoaded) {
     const calibration = incoming.calibration;
     const numbers: Array<[string, keyof CalibrationState]> = [
@@ -340,36 +377,110 @@ function stopHeartbeat(): void {
   window.clearInterval(pollTimer);
 }
 
-function updateJoystick(event: PointerEvent): void {
-  if (!state.armed) return;
-  const rect = joystick.getBoundingClientRect();
-  const x = clamp(((event.clientX - rect.left) / rect.width) * 2 - 1);
-  const y = clamp(-(((event.clientY - rect.top) / rect.height) * 2 - 1));
-  currentVector = { x, y };
-  joystickKnob.style.transform = `translate(calc(-50% + ${x * rect.width * .32}px),calc(-50% + ${-y * rect.height * .32}px))`;
-  $("vectorOutput").textContent = `X ${x.toFixed(2)} · Y ${y.toFixed(2)}`;
-  const limit = Number(($("throttleLimit") as HTMLInputElement).value) / 100;
-  const mix = mixDrive(y, x, limit);
-  $("leftMotor").textContent = describeMotor(mix.left);
-  $("rightMotor").textContent = describeMotor(mix.right);
-  if (!joystickSendTimer) joystickSendTimer = window.setTimeout(() => {
-    send("drive", { surge: currentVector.y, yaw: currentVector.x, limit }, false);
-    joystickSendTimer = 0;
-  }, 80);
-}
-
-function centerJoystick(sendStop = true): void {
-  currentVector = { x: 0, y: 0 };
-  joystickKnob.style.transform = "translate(-50%,-50%)";
-  $("vectorOutput").textContent = "X 0.00 · Y 0.00";
-  $("leftMotor").textContent = "Neutral";
-  $("rightMotor").textContent = "Neutral";
-  if (sendStop && state.armed) send("drive", { surge: 0, yaw: 0, limit: 0 }, false);
-}
-
 function describeMotor(value: number): string {
   if (Math.abs(value) < .03) return "Neutral";
   return `${value > 0 ? "Forward" : "Reverse"} ${Math.round(Math.abs(value) * 100)}%`;
+}
+
+function motorElement(side: "left" | "right"): HTMLInputElement {
+  return $(`${side}Throttle`) as HTMLInputElement;
+}
+
+function renderMotorInputs(): void {
+  (["left", "right"] as const).forEach((side) => {
+    const input = motorElement(side);
+    input.value = String(Math.round(motorInput[side] * 100));
+    setRangeFill(input);
+  });
+  const levels = directMotorLevels(motorInput.left, motorInput.right, Number(($("throttleLimit") as HTMLInputElement).value) / 100);
+  state.leftMotor = levels.left;
+  state.rightMotor = levels.right;
+  $("leftMotor").textContent = describeMotor(levels.left);
+  $("rightMotor").textContent = describeMotor(levels.right);
+}
+
+function sendMotorCommand(log = false): void {
+  if (!state.armed) return;
+  const limit = Number(($("throttleLimit") as HTMLInputElement).value) / 100;
+  send("motors", { left: motorInput.left, right: motorInput.right, limit }, log);
+}
+
+function queueMotorCommand(): void {
+  renderMotorInputs();
+  if (motorSendTimer) return;
+  motorSendTimer = window.setTimeout(() => {
+    sendMotorCommand(false);
+    motorSendTimer = 0;
+  }, 60);
+}
+
+function setMotorInput(side: "left" | "right", value: number): void {
+  motorInput[side] = clamp(value, -1, 1);
+  queueMotorCommand();
+}
+
+function releaseMotor(side: "left" | "right"): void {
+  window.clearTimeout(motorSendTimer);
+  motorSendTimer = 0;
+  motorInput[side] = 0;
+  renderMotorInputs();
+  sendMotorCommand(false);
+}
+
+function neutralizeMotors(sendStop = true, log = false): void {
+  window.clearTimeout(motorSendTimer);
+  motorSendTimer = 0;
+  motorInput = { left: 0, right: 0 };
+  renderMotorInputs();
+  if (sendStop && state.armed) send("motors", { left: 0, right: 0, limit: 1 }, log);
+}
+
+function signedDegrees(value: number): string {
+  return `${value > 0 ? "+" : ""}${value}°`;
+}
+
+function currentBallastAngles() {
+  const master = Number(($("masterBallast") as HTMLInputElement).value);
+  const frontTrim = Number(($("frontTrim") as HTMLInputElement).value);
+  const rearTrim = Number(($("rearTrim") as HTMLInputElement).value);
+  return { master, frontTrim, rearTrim, ...effectiveBallastAngles(master, frontTrim, rearTrim) };
+}
+
+function renderBallastControls(): void {
+  const angles = currentBallastAngles();
+  $("masterBallastOutput").textContent = `${angles.master}°`;
+  $("frontTrimOutput").textContent = signedDegrees(angles.frontTrim);
+  $("rearTrimOutput").textContent = signedDegrees(angles.rearTrim);
+  $("frontBallastOutput").textContent = `${angles.front}°`;
+  $("rearBallastOutput").textContent = `${angles.rear}°`;
+  ["masterBallast", "frontTrim", "rearTrim"].forEach((id) => setRangeFill($(id) as HTMLInputElement));
+  state.frontBallastDeg = angles.front;
+  state.rearBallastDeg = angles.rear;
+  state.frontBallast = 1 - angles.front / 180;
+  state.rearBallast = 1 - angles.rear / 180;
+  $("ballastState").textContent = angles.master === 0 ? "0° Dive" : angles.master === 180 ? "180° Surface" : `${angles.master}° Hold`;
+}
+
+function sendBallastCommand(mode = "", log = false): void {
+  const { front, rear } = currentBallastAngles();
+  send("ballast_angle", { frontDeg: front, rearDeg: rear, ...(mode ? { mode } : {}) }, log);
+}
+
+function queueBallastCommand(): void {
+  renderBallastControls();
+  if (ballastSendTimer) return;
+  ballastSendTimer = window.setTimeout(() => {
+    sendBallastCommand();
+    ballastSendTimer = 0;
+  }, 80);
+}
+
+function setBallastControls(master: number, frontTrim: number, rearTrim: number, sendCommand = true, mode = ""): void {
+  ($("masterBallast") as HTMLInputElement).value = String(Math.round(clamp(master, 0, 180)));
+  ($("frontTrim") as HTMLInputElement).value = String(Math.round(clamp(frontTrim, -30, 30)));
+  ($("rearTrim") as HTMLInputElement).value = String(Math.round(clamp(rearTrim, -30, 30)));
+  renderBallastControls();
+  if (sendCommand) sendBallastCommand(mode, true);
 }
 
 function setRangeFill(input: HTMLInputElement): void {
@@ -519,46 +630,39 @@ function calibrationPayload(): Record<string, unknown> | null {
 
 document.querySelectorAll<HTMLElement>("[data-view-target]").forEach((element) => element.addEventListener("click", () => showView(element.dataset.viewTarget as ViewName)));
 $("reconnectButton").addEventListener("click", connect);
+$("openWifiButton").addEventListener("click", () => window.SubmarineAndroid?.openWifiSettings());
 $("refreshStatus").addEventListener("click", () => { refreshStatus(); showToast("Status refreshed"); });
-$("claimButton").addEventListener("click", () => send(state.pilot ? "release" : "claim"));
-$("armButton").addEventListener("click", () => send("arm", { armed: !state.armed }));
+$("claimButton").addEventListener("click", () => {
+  if (state.pilot) neutralizeMotors();
+  send(state.pilot ? "release" : "claim");
+});
+$("armButton").addEventListener("click", () => {
+  if (state.armed) neutralizeMotors();
+  send("arm", { armed: !state.armed });
+});
 
-joystick.addEventListener("pointerdown", (event) => {
-  if (!state.armed) return;
-  joystick.setPointerCapture(event.pointerId);
-  updateJoystick(event);
+(["left", "right"] as const).forEach((side) => {
+  const input = motorElement(side);
+  input.addEventListener("input", () => setMotorInput(side, Number(input.value) / 100));
+  input.addEventListener("pointerup", () => releaseMotor(side));
+  input.addEventListener("pointercancel", () => releaseMotor(side));
+  input.addEventListener("lostpointercapture", () => { if (motorInput[side] !== 0) releaseMotor(side); });
+  input.addEventListener("keyup", (event) => {
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(event.key)) releaseMotor(side);
+  });
+  input.addEventListener("blur", () => { if (motorInput[side] !== 0) releaseMotor(side); });
 });
-joystick.addEventListener("pointermove", (event) => { if (joystick.hasPointerCapture(event.pointerId)) updateJoystick(event); });
-joystick.addEventListener("pointerup", (event) => { joystick.releasePointerCapture(event.pointerId); centerJoystick(); });
-joystick.addEventListener("pointercancel", () => centerJoystick());
-joystick.addEventListener("keydown", (event) => {
-  if (!state.armed) return;
-  const step = .1;
-  if (event.key === "ArrowUp") currentVector.y = clamp(currentVector.y + step);
-  else if (event.key === "ArrowDown") currentVector.y = clamp(currentVector.y - step);
-  else if (event.key === "ArrowLeft") currentVector.x = clamp(currentVector.x - step);
-  else if (event.key === "ArrowRight") currentVector.x = clamp(currentVector.x + step);
-  else if (event.key === "Escape" || event.key === " ") centerJoystick();
-  else return;
-  event.preventDefault();
-  send("drive", { surge: currentVector.y, yaw: currentVector.x, limit: Number(($("throttleLimit") as HTMLInputElement).value) / 100 }, false);
-});
+$("stopMotors").addEventListener("click", () => { neutralizeMotors(true, true); showToast("Both motors stopped"); });
 
 document.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach((input) => { setRangeFill(input); input.addEventListener("input", () => setRangeFill(input)); });
-$("throttleLimit").addEventListener("input", () => $("throttleOutput").textContent = `${($("throttleLimit") as HTMLInputElement).value}%`);
+$("throttleLimit").addEventListener("input", () => { $("throttleOutput").textContent = `${($("throttleLimit") as HTMLInputElement).value}%`; queueMotorCommand(); });
 ["pilotLight", "cameraLight"].forEach((id) => $(id).addEventListener("input", () => setLight(Number(($(id) as HTMLInputElement).value))));
-["frontBallast", "rearBallast"].forEach((id) => $(id).addEventListener("input", () => {
-  const front = Number(($("frontBallast") as HTMLInputElement).value) / 100;
-  const rear = Number(($("rearBallast") as HTMLInputElement).value) / 100;
-  $("frontBallastOutput").textContent = `${Math.round(front * 100)}%`;
-  $("rearBallastOutput").textContent = `${Math.round(rear * 100)}%`;
-  send("ballast", { front, rear }, false);
-}));
-$("surfaceButton").addEventListener("click", () => send("ballast", { front: 0, rear: 0, mode: "surface" }));
-$("diveButton").addEventListener("click", () => send("ballast", { front: 1, rear: 1, mode: "dive" }));
+["masterBallast", "frontTrim", "rearTrim"].forEach((id) => $(id).addEventListener("input", queueBallastCommand));
+$("surfaceButton").addEventListener("click", () => setBallastControls(180, 0, 0, true, "surface"));
+$("diveButton").addEventListener("click", () => setBallastControls(0, 0, 0, true, "dive"));
 $("emergencyButton").addEventListener("click", () => emergencyDialog.showModal());
 $("cancelEmergency").addEventListener("click", () => emergencyDialog.close());
-$("confirmEmergency").addEventListener("click", () => { send("emergency_surface"); emergencyDialog.close(); centerJoystick(false); });
+$("confirmEmergency").addEventListener("click", () => { neutralizeMotors(false); setBallastControls(180, 0, 0, false); send("emergency_surface"); emergencyDialog.close(); });
 $("captureButton").addEventListener("click", captureImage);
 $("recordButton").addEventListener("click", toggleRecording);
 $("overlayToggle").addEventListener("change", () => $("cameraOverlay").toggleAttribute("hidden", !(($("overlayToggle") as HTMLInputElement).checked)));
@@ -578,8 +682,8 @@ $("saveWifi").addEventListener("click", () => { const password = ($("apPassword"
 $("exportConfig").addEventListener("click", () => downloadBlob(`submarine-config-${Date.now()}.json`, new Blob([JSON.stringify({ version: 1, failsafeMs: Number(($("failsafeTimeout") as HTMLSelectElement).value), frameSize: ($("frameSize") as HTMLSelectElement).value, jpegQuality: Number(($("jpegQuality") as HTMLInputElement).value), calibration: calibrationPayload() }, null, 2)], { type: "application/json" })));
 $("importConfig").addEventListener("change", async () => { const file = (($("importConfig") as HTMLInputElement).files ?? [])[0]; if (!file) return; const parsed = safeJson(await file.text()); if (!parsed || parsed.version !== 1) return showToast("Unsupported configuration file", true); send("config_import", { config: parsed }); });
 
-window.addEventListener("beforeunload", () => { if (state.pilot) send("release", {}, false); stopHeartbeat(); });
-window.addEventListener("blur", () => { if (state.armed) centerJoystick(); });
+window.addEventListener("beforeunload", () => { if (state.pilot) { neutralizeMotors(); send("release", {}, false); } stopHeartbeat(); });
+window.addEventListener("blur", () => { if (state.armed) neutralizeMotors(); });
 pilotFeed.addEventListener("error", () => $("feedFps").textContent = "STREAM WAITING");
 cameraFeed.addEventListener("error", () => $("cameraFps").textContent = "STREAM WAITING");
 
@@ -587,4 +691,7 @@ $("snapshotCount").textContent = localStorage.getItem("subrc.snapshots") ?? "0";
 $("recordingCount").textContent = localStorage.getItem("subrc.recordings") ?? "0";
 renderLogs();
 renderConnectionHistory();
+renderMotorInputs();
+renderBallastControls();
+if (window.SubmarineAndroid) $("openWifiButton").hidden = false;
 window.setTimeout(() => { boot.hidden = true; app.hidden = false; updateStateUI(); connect(); }, 400);

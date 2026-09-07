@@ -1,15 +1,17 @@
 # Submarine RC
 
-Submarine RC is a local-only controller for an AI-Thinker ESP32-CAM submarine. The ESP32 creates its own Wi-Fi network and serves the same TypeScript interface used by the desktop simulator and Android application. It does not require cloud hosting or an internet connection.
+Submarine RC is a local-only controller for an AI-Thinker ESP32-CAM submarine. The Android APK bundles and renders the complete TypeScript controller itself, so the UI opens even when the submarine is offline. The ESP32 creates its own Wi-Fi network and focuses on camera streaming, telemetry, WebSocket commands, and hardware I/O. No cloud hosting or internet connection is required.
 
 ## What is included
 
 - `esp-materials/` — ESP32-CAM code, pin definitions, PlatformIO project, and complete flashing guide
-- `web/` — responsive Pilot, Camera, Sonar, Logs, and Settings interface
+- `web/` — responsive Pilot, Camera, Sonar, Logs, and Settings interface bundled into the APK
 - `simulator/` — hardware-free local server at `http://localhost:3000`
 - `android/` — native Java WebView wrapper (`my.finalyearproject.submarinerc`)
 - `releases/` — compiled ESP images and sideload APK after a release build
 - `docs/` — wiring, calibration, protocol, troubleshooting, and bench-test instructions
+
+The landscape Pilot screen is arranged like a physical controller: the left ESC slider sits at the far left, the live camera stays in the centre, the right ESC slider sits beside the camera, and ballast/telemetry utilities sit at the far right. Both motor sliders spring back to neutral on release. Ballast uses a 0–180° master angle with independent front/rear trim (`0°` dive, `180°` surface).
 
 ## Important safety limitations
 
@@ -40,7 +42,7 @@ npm test
 2. Open the step-by-step [ESP Materials flashing guide](esp-materials/README.md).
 3. Flash the ESP32-CAM with GPIO0 connected to GND, then remove GPIO0 from GND and reset.
 4. Join `SUB-RC-<device-id>` using the default password `NautilusRC!`.
-5. Install the Android app from `releases/SubmarineRC-v1.0.0.apk`; it connects directly to the ESP at `192.168.4.1`.
+5. Install the Android app from `releases/SubmarineRC-v1.2.0.apk`. Its UI opens immediately and connects directly to the ESP at `192.168.4.1` when the submarine Wi-Fi is available.
 6. With propellers removed, claim control and complete [CALIBRATION.md](docs/CALIBRATION.md).
 
 Change the default Wi-Fi password before field use. The controller is intentionally limited to two simultaneous Wi-Fi clients and one active pilot.
@@ -62,11 +64,11 @@ The ready-to-flash ESP image is written as one file at address `0x0`. Individual
 
 | File | Flash address |
 | --- | ---: |
-| `SubmarineRC-ESP-v1.0.0.bin` | `0x0` |
+| `SubmarineRC-ESP-v1.2.0.bin` | `0x0` |
 | `bootloader.bin` | `0x1000` |
 | `partitions.bin` | `0x8000` |
 | `boot_app0.bin` | `0xE000` |
 | `esp-code.bin` | `0x10000` |
-| `littlefs-ui.bin` | `0x210000` |
+| `littlefs-diagnostics.bin` | `0x210000` |
 
 See [BENCH_TEST.md](docs/BENCH_TEST.md) before installing propellers or placing the electronics in the hull.

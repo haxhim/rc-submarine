@@ -11,7 +11,7 @@
 #include "control_math.h"
 #include "pins.h"
 
-constexpr char FIRMWARE_VERSION[] = "1.0.0";
+constexpr char FIRMWARE_VERSION[] = "1.2.0";
 constexpr char DEFAULT_AP_PASSWORD[] = "NautilusRC!";
 constexpr uint8_t PROTOCOL_VERSION = 1;
 constexpr uint32_t DEFAULT_FAILSAFE_MS = 1000;
@@ -45,6 +45,10 @@ volatile uint32_t lastHeartbeat = 0;
 uint32_t failsafeMs = DEFAULT_FAILSAFE_MS;
 float frontBallast = 0;
 float rearBallast = 0;
+float frontBallastDeg = 180;
+float rearBallastDeg = 180;
+float leftMotor = 0;
+float rightMotor = 0;
 float lightLevel = 0;
 String frameSizeName = "VGA";
 uint8_t jpegQuality = 12;
@@ -59,6 +63,8 @@ void writePulse(int channel, uint16_t pulseUs) {
 }
 
 void neutralizePropulsion() {
+  leftMotor = 0;
+  rightMotor = 0;
   writePulse(LEFT_ESC_CHANNEL, calibration.escNeutral);
   writePulse(RIGHT_ESC_CHANNEL, calibration.escNeutral);
 }
@@ -67,8 +73,20 @@ void setBallast(float front, float rear) {
   if (!calibration.valid) return;
   frontBallast = clamp01(front);
   rearBallast = clamp01(rear);
+  frontBallastDeg = (1.0f - frontBallast) * 180.0f;
+  rearBallastDeg = (1.0f - rearBallast) * 180.0f;
   writePulse(FRONT_SERVO_CHANNEL, endpointPulse(frontBallast, calibration.frontSurface, calibration.frontDive, calibration.invertFront));
   writePulse(REAR_SERVO_CHANNEL, endpointPulse(rearBallast, calibration.rearSurface, calibration.rearDive, calibration.invertRear));
+}
+
+void setBallastAngle(float frontDeg, float rearDeg) {
+  if (!calibration.valid) return;
+  frontBallastDeg = frontDeg < 0.0f ? 0.0f : frontDeg > 180.0f ? 180.0f : frontDeg;
+  rearBallastDeg = rearDeg < 0.0f ? 0.0f : rearDeg > 180.0f ? 180.0f : rearDeg;
+  frontBallast = 1.0f - frontBallastDeg / 180.0f;
+  rearBallast = 1.0f - rearBallastDeg / 180.0f;
+  writePulse(FRONT_SERVO_CHANNEL, ballastAnglePulse(frontBallastDeg, calibration.frontSurface, calibration.frontDive, calibration.invertFront));
+  writePulse(REAR_SERVO_CHANNEL, ballastAnglePulse(rearBallastDeg, calibration.rearSurface, calibration.rearDive, calibration.invertRear));
 }
 
 void attachBallastOutputs() {
@@ -81,7 +99,7 @@ void attachBallastOutputs() {
 void safeSurface(bool markFailsafe) {
   armed = false;
   neutralizePropulsion();
-  if (calibration.valid) setBallast(0, 0);
+  if (calibration.valid) setBallastAngle(180, 180);
   failsafe = markFailsafe;
 }
 
@@ -153,6 +171,10 @@ void fillState(JsonObject output, int forFd = -1) {
   output["light"] = lightLevel;
   output["frontBallast"] = frontBallast;
   output["rearBallast"] = rearBallast;
+  output["frontBallastDeg"] = frontBallastDeg;
+  output["rearBallastDeg"] = rearBallastDeg;
+  output["leftMotor"] = leftMotor;
+  output["rightMotor"] = rightMotor;
   output["frameSize"] = frameSizeName;
   output["jpegQuality"] = jpegQuality;
   output["streamFps"] = streamFps;
@@ -259,8 +281,23 @@ esp_err_t wsHandler(httpd_req_t *req) {
     MotorMix mix = differentialMix(request["surge"], request["yaw"], request["limit"]);
     if (calibration.invertLeft) mix.left *= -1;
     if (calibration.invertRight) mix.right *= -1;
+    leftMotor = mix.left;
+    rightMotor = mix.right;
     writePulse(LEFT_ESC_CHANNEL, normalizedPulse(mix.left, calibration.escMin, calibration.escNeutral, calibration.escMax));
     writePulse(RIGHT_ESC_CHANNEL, normalizedPulse(mix.right, calibration.escMin, calibration.escNeutral, calibration.escMax));
+    return sendAck(req, request, true);
+  }
+  if (type == "motors") {
+    if (!requirePilot(req, request)) return ESP_OK;
+    if (!armed) return sendAck(req, request, false, "Propulsion is disarmed");
+    if (!jsonUnit(request["left"]) || !jsonUnit(request["right"]) || !jsonUnit(request["limit"]) || request["limit"].as<float>() < 0) return sendAck(req, request, false, "Motor values must be normalized");
+    MotorMix levels = directMotorLevels(request["left"], request["right"], request["limit"]);
+    if (calibration.invertLeft) levels.left *= -1;
+    if (calibration.invertRight) levels.right *= -1;
+    leftMotor = levels.left;
+    rightMotor = levels.right;
+    writePulse(LEFT_ESC_CHANNEL, normalizedPulse(levels.left, calibration.escMin, calibration.escNeutral, calibration.escMax));
+    writePulse(RIGHT_ESC_CHANNEL, normalizedPulse(levels.right, calibration.escMin, calibration.escNeutral, calibration.escMax));
     return sendAck(req, request, true);
   }
   if (type == "ballast") {
@@ -268,6 +305,12 @@ esp_err_t wsHandler(httpd_req_t *req) {
     if (!calibration.valid || !jsonUnit(request["front"]) || !jsonUnit(request["rear"]) || request["front"].as<float>() < 0 || request["rear"].as<float>() < 0) return sendAck(req, request, false, "Ballast values must be between 0 and 1");
     setBallast(request["front"], request["rear"]);
     return sendAck(req, request, true, request["mode"] == "surface" ? "Ballast moving to surface" : request["mode"] == "dive" ? "Ballast moving to dive" : "");
+  }
+  if (type == "ballast_angle") {
+    if (!requirePilot(req, request)) return ESP_OK;
+    if (!calibration.valid || !request["frontDeg"].is<int>() || !request["rearDeg"].is<int>() || !validBallastAngle(request["frontDeg"].as<float>()) || !validBallastAngle(request["rearDeg"].as<float>())) return sendAck(req, request, false, "Ballast angles must be whole degrees from 0 to 180");
+    setBallastAngle(request["frontDeg"], request["rearDeg"]);
+    return sendAck(req, request, true, request["mode"] == "surface" ? "Ballast moving to 180 degree surface position" : request["mode"] == "dive" ? "Ballast moving to 0 degree dive position" : "");
   }
   if (type == "light") {
     if (!requirePilot(req, request)) return ESP_OK;
@@ -303,7 +346,7 @@ esp_err_t wsHandler(httpd_req_t *req) {
     saveCalibration();
     neutralizePropulsion();
     attachBallastOutputs();
-    setBallast(0, 0);
+    setBallastAngle(180, 180);
     return sendAck(req, request, true, "Calibration saved; propulsion remains disarmed");
   }
   if (type == "config") {
@@ -349,7 +392,7 @@ esp_err_t wsHandler(httpd_req_t *req) {
       calibration.valid = true;
       saveCalibration();
       attachBallastOutputs();
-      setBallast(0, 0);
+      setBallastAngle(180, 180);
     }
     failsafeMs = importedFailsafe;
     frameSizeName = importedFrame;
@@ -502,7 +545,7 @@ void setup() {
   ledcSetup(LIGHT_CHANNEL, 5000, 8); ledcAttachPin(LIGHT_PIN, LIGHT_CHANNEL); ledcWrite(LIGHT_CHANNEL, 0);
   if (calibration.valid) {
     attachBallastOutputs();
-    setBallast(0, 0);
+    setBallastAngle(180, 180);
   }
 
   if (!LittleFS.begin(true)) Serial.println("LittleFS mount failed");
